@@ -64,6 +64,7 @@ export async function claimAutomatedNewsCollection(
 export async function persistAutomatedNewsCollection(runId: string, outcome: DailyCollectionOutcome) {
   const supabase = automationClient();
   const articleRows = outcome.selected.map((article) => toArticleRow(runId, outcome.marketDate, article));
+  const supportingRows = outcome.supporting.map((article) => toArticleRow(runId, outcome.marketDate, article, "supporting"));
   const sourceRows = outcome.sourceAttempts.map((attempt) => ({
     id: stableId("source-attempt", `${runId}:${attempt.sourceId}:${attempt.symbol}`),
     run_id: runId,
@@ -103,6 +104,9 @@ export async function persistAutomatedNewsCollection(runId: string, outcome: Dai
   }
 
   const writes = [
+    supportingRows.length
+      ? supabase.from("news_supporting_contexts").upsert(supportingRows, { onConflict: "symbol,market_date,canonical_url" })
+      : Promise.resolve({ error: null }),
     sourceRows.length
       ? supabase.from("news_source_attempts").upsert(sourceRows, { onConflict: "run_id,source_id,symbol" })
       : Promise.resolve({ error: null }),
@@ -121,6 +125,7 @@ export async function persistAutomatedNewsCollection(runId: string, outcome: Dai
     strongEvidenceTarget: outcome.targetCount,
     strongEvidenceCollected: outcome.selected.length,
     strongEvidenceThreshold: STRONG_EVIDENCE_THRESHOLD,
+    supportingContextCollected: outcome.supporting.length,
     fullTextRetrievalSuccesses: outcome.fullTextRetrievalSuccesses,
     fullTextRetrievalFailures: outcome.fullTextRetrievalFailures,
     sourcesAttempted: outcome.sourceAttempts.length,
@@ -191,11 +196,25 @@ export async function getAutomatedNewsArticlesForMonth(symbol: string, reviewMon
   return ((data ?? []) as StoredArticleRow[]).map(fromStoredArticleRow);
 }
 
+export async function getAutomatedSupportingNewsForMonth(symbol: string, reviewMonth: string) {
+  if (!isSharedNewsSyncEnabled()) return [];
+  const { from, nextMonth } = monthBounds(reviewMonth);
+  const { data, error } = await automationClient()
+    .from("news_supporting_contexts")
+    .select("*")
+    .eq("symbol", symbol.toUpperCase())
+    .gte("market_date", from)
+    .lt("market_date", nextMonth)
+    .order("market_date", { ascending: false });
+  if (error) throw new Error(`Could not read ${symbol} monthly supporting context: ${error.message}`);
+  return ((data ?? []) as StoredArticleRow[]).map(fromStoredArticleRow);
+}
+
 export async function getAutomatedMonthlyCoverage(reviewMonth: string) {
-  if (!isSharedNewsSyncEnabled()) return { daysWithShortfall: 0, runCount: 0 };
-  const from = `${reviewMonth}-01`;
-  const [year, month] = reviewMonth.split("-").map(Number);
-  const nextMonth = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+  if (!isSharedNewsSyncEnabled()) {
+    return { daysWithShortfall: 0, runCount: 0, strongEvidenceCollected: 0, strongEvidenceTarget: 0, supportingContextCount: 0 };
+  }
+  const { from, nextMonth } = monthBounds(reviewMonth);
   const { data, error } = await automationClient()
     .from("news_collection_runs")
     .select("selected_count,target_count")
@@ -204,9 +223,18 @@ export async function getAutomatedMonthlyCoverage(reviewMonth: string) {
     .eq("status", "completed");
   if (error) throw new Error(`Could not read monthly collection coverage: ${error.message}`);
   const runs = (data ?? []) as Array<{ selected_count: number; target_count: number }>;
+  const supporting = await automationClient()
+    .from("news_supporting_contexts")
+    .select("id", { count: "exact", head: true })
+    .gte("market_date", from)
+    .lt("market_date", nextMonth);
+  if (supporting.error) throw new Error(`Could not read monthly supporting coverage: ${supporting.error.message}`);
   return {
     daysWithShortfall: runs.filter((run) => run.selected_count < run.target_count).length,
     runCount: runs.length,
+    strongEvidenceCollected: runs.reduce((total, run) => total + run.selected_count, 0),
+    strongEvidenceTarget: runs.reduce((total, run) => total + run.target_count, 0),
+    supportingContextCount: supporting.count ?? 0,
   };
 }
 
@@ -263,8 +291,16 @@ function automationClient() {
   });
 }
 
-function toArticleRow(runId: string, marketDate: string, article: RetrievedNewsCandidate) {
-  const id = stableId("daily-news", `${article.symbol}:${marketDate}`);
+function toArticleRow(
+  runId: string,
+  marketDate: string,
+  article: RetrievedNewsCandidate,
+  evidenceClass: "strong" | "supporting" = "strong",
+) {
+  const id = stableId(
+    evidenceClass === "strong" ? "daily-news" : "supporting-news",
+    evidenceClass === "strong" ? `${article.symbol}:${marketDate}` : `${article.symbol}:${marketDate}:${article.canonicalUrl}`,
+  );
   return {
     id,
     run_id: runId,
@@ -310,6 +346,13 @@ function toArticleRow(runId: string, marketDate: string, article: RetrievedNewsC
       qualityFlags: article.qualityFlags,
     },
   };
+}
+
+function monthBounds(reviewMonth: string) {
+  const from = `${reviewMonth}-01`;
+  const [year, month] = reviewMonth.split("-").map(Number);
+  const nextMonth = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+  return { from, nextMonth };
 }
 
 function fromStoredArticleRow(row: StoredArticleRow): CachedNewsArticle {

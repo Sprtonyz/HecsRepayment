@@ -5,6 +5,7 @@ import { getNewsSourcesForSymbol, getTickerNewsProfile } from "@/lib/news/automa
 import {
   assessStrongEvidence,
   groupNearDuplicates,
+  isSupportingContext,
   rejectUnsuitableCandidates,
   scoreCandidate,
   selectBestTickerStory,
@@ -34,6 +35,7 @@ export async function collectDailyDeepContextNews({
   const tickerOutcomes: TickerCollectionOutcome[] = [];
   const sourceAttempts: SourceAttempt[] = [];
   const selected: RetrievedNewsCandidate[] = [];
+  const supporting: RetrievedNewsCandidate[] = [];
   const rejected = [];
 
   const outcomes = await mapWithConcurrency(symbols, 2, async (symbol) =>
@@ -45,6 +47,7 @@ export async function collectDailyDeepContextNews({
     if (outcome.selected) {
       selected.push(outcome.selected);
     }
+    supporting.push(...outcome.supporting);
   }
 
   return {
@@ -52,6 +55,7 @@ export async function collectDailyDeepContextNews({
     runKey: `deep-context-news:${marketDate}`,
     targetCount: symbols.length,
     selected,
+    supporting,
     sourceAttempts,
     rejected,
     tickerOutcomes,
@@ -72,7 +76,9 @@ async function collectTickerNews({
   const discovered: DiscoveredNewsCandidate[] = [];
 
   await Promise.all(getNewsSourcesForSymbol(symbol).map(async (source) => {
-    const provider = rssDiscoveryProvider(source, symbol);
+    const provider = source.method === "directPage"
+      ? directPageDiscoveryProvider(source, symbol)
+      : rssDiscoveryProvider(source, symbol);
     const attemptedAt = new Date().toISOString();
     try {
       const candidates = await provider.discover(profile);
@@ -135,6 +141,11 @@ async function collectTickerNews({
   });
   const strongCandidates = representatives.filter((candidate) => !strongEvidenceRejectionReason(candidate));
   const selected = selectBestTickerStory(strongCandidates);
+  const supporting = representatives
+    .filter((candidate) => candidate.id !== selected?.id)
+    .filter(isSupportingContext)
+    .sort((left, right) => right.qualityScore - left.qualityScore || right.relevanceScore - left.relevanceScore)
+    .slice(0, 2);
   const retrievalSuccesses = retrieved.filter((item) => item.retrievalStatus === "read").length;
   const retrievalFailures = retrieved.length - retrievalSuccesses;
   const allRejected = [...filtered.rejected, ...evidenceRejected];
@@ -142,6 +153,7 @@ async function collectTickerNews({
   return {
     symbol,
     selected,
+    supporting,
     discoveredCount: discovered.length,
     rejected: allRejected,
     duplicatesRemoved: removed,
@@ -163,7 +175,14 @@ function rssDiscoveryProvider(source: NewsSourceDefinition, symbol: string): New
   return {
     source,
     discover: (profile) =>
-      discoverSource(source.buildUrl(profile), source.id, source.label, source.method, symbol),
+      discoverSource(source.buildUrl(profile), source.id, source.label, source.method, symbol, source.priority),
+  };
+}
+
+function directPageDiscoveryProvider(source: NewsSourceDefinition, symbol: string): NewsDiscoveryProvider {
+  return {
+    source,
+    discover: (profile) => discoverDirectPage(source.buildUrl(profile), source, symbol),
   };
 }
 
@@ -212,6 +231,7 @@ async function discoverSource(
   source: string,
   sourceMethod: DiscoveredNewsCandidate["sourceMethod"],
   symbol: string,
+  sourcePriority?: number,
 ) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
@@ -228,7 +248,23 @@ async function discoverSource(
       throw new Error(`feed-http-${response.status}`);
     }
     const xml = await response.text();
-    return parseFeed(xml, { sourceId, source, sourceMethod, symbol });
+    return parseFeed(xml, { sourceId, source, sourceMethod, symbol, sourcePriority });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function discoverDirectPage(url: string, source: NewsSourceDefinition, symbol: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
+  try {
+    const response = await fetchFeedWithRetry(url, {
+      headers: { accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8", "user-agent": USER_AGENT },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`page-http-${response.status}`);
+    return parseDirectPage(await response.text(), url, source, symbol);
   } finally {
     clearTimeout(timeout);
   }
@@ -251,7 +287,7 @@ async function fetchFeedWithRetry(url: string, init: RequestInit) {
 
 function parseFeed(
   xml: string,
-  source: Pick<DiscoveredNewsCandidate, "sourceId" | "source" | "sourceMethod" | "symbol">,
+  source: Pick<DiscoveredNewsCandidate, "sourceId" | "source" | "sourceMethod" | "symbol" | "sourcePriority">,
 ) {
   const blocks = [
     ...matchBlocks(xml, "item").map((block) => ({ block, atom: false })),
@@ -282,6 +318,37 @@ function parseFeed(
   });
 }
 
+function parseDirectPage(html: string, pageUrl: string, source: NewsSourceDefinition, symbol: string) {
+  const blocks = [...matchBlocks(html, "article"), ...matchBlocks(html, "li")];
+  const seen = new Set<string>();
+  return blocks.flatMap((block) => {
+    const link = firstLink(block);
+    const title = cleanXmlText(readTag(block, "h1") || readTag(block, "h2") || readTag(block, "h3") || link?.text || "");
+    if (!link || !title) return [];
+    let url: string;
+    try {
+      url = normalizeUrl(new URL(link.href, pageUrl).toString());
+    } catch {
+      return [];
+    }
+    if (!matchesAllowedDomain(url, source.allowedDomains) || seen.has(url)) return [];
+    seen.add(url);
+    const dateMatch = block.match(/(?:date|published)[^>]*>\s*([^<]{6,80})\s*</i);
+    return [{
+      id: stableId("candidate", `${source.id}:${symbol}:${url}`),
+      symbol,
+      title,
+      source: source.label,
+      sourceId: source.id,
+      sourceMethod: source.method,
+      sourcePriority: source.priority,
+      url,
+      publishedAt: dateMatch ? parseDate(cleanXmlText(dateMatch[1])) : undefined,
+      raw: { directPageSource: source.id },
+    } satisfies DiscoveredNewsCandidate];
+  }).slice(0, 30);
+}
+
 function inferTopic(candidate: DiscoveredNewsCandidate) {
   const text = `${candidate.title} ${candidate.summary ?? ""}`.toLowerCase();
   if (/antitrust|regulat|doj|dma|lawsuit|court/.test(text)) return "legalRegulatory";
@@ -307,6 +374,20 @@ function readTag(xml: string, tag: string) {
 function readAttribute(xml: string, tag: string, attribute: string) {
   const pattern = new RegExp(`<${tag}\\b[^>]*\\s${attribute}=["']([^"']+)["'][^>]*>`, "i");
   return xml.match(pattern)?.[1]?.trim() ?? "";
+}
+
+function firstLink(html: string) {
+  const match = html.match(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+  return match ? { href: match[1], text: cleanXmlText(match[2]) } : undefined;
+}
+
+function matchesAllowedDomain(value: string, domains: string[]) {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return domains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+  } catch {
+    return false;
+  }
 }
 
 function cleanXmlText(value: string) {

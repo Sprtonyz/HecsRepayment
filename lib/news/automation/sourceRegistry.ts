@@ -92,6 +92,44 @@ const aaplDirectSources: NewsSourceDefinition[] = [
   },
 ];
 
+// First-party publication surfaces only. A no-result or unavailable source is
+// recorded in monitoring rather than silently substituted with weak coverage.
+const directSourcesBySymbol: Record<string, NewsSourceDefinition[]> = {
+  AAPL: aaplDirectSources,
+  NVDA: [{
+    id: "nvidia-newsroom-releases-rss",
+    label: "NVIDIA Newsroom releases RSS",
+    method: "directFeed",
+    priority: 100,
+    allowedDomains: ["nvidianews.nvidia.com"],
+    buildUrl: () => "https://nvidianews.nvidia.com/releases.xml",
+  }],
+  AMZN: [{
+    id: "amazon-press-centre",
+    label: "Amazon Global Press Center",
+    method: "directPage",
+    priority: 100,
+    allowedDomains: ["press.aboutamazon.com", "aboutamazon.com"],
+    buildUrl: () => "https://press.aboutamazon.com/press-release-archive",
+  }],
+  TSLA: [{
+    id: "tesla-investor-relations-press",
+    label: "Tesla Investor Relations press releases",
+    method: "directPage",
+    priority: 100,
+    allowedDomains: ["ir.tesla.com"],
+    buildUrl: () => "https://ir.tesla.com/press",
+  }],
+  SPCX: [{
+    id: "spacex-official-updates",
+    label: "SpaceX official updates",
+    method: "directPage",
+    priority: 100,
+    allowedDomains: ["spacex.com"],
+    buildUrl: () => "https://www.spacex.com/updates/",
+  }],
+};
+
 export function getTickerNewsProfile(symbol: string): TickerNewsProfile {
   const normalized = symbol.toUpperCase();
   return (
@@ -113,5 +151,5 @@ export function getActiveDeepContextSymbols() {
 }
 
 export function getNewsSourcesForSymbol(symbol: string): NewsSourceDefinition[] {
-  return symbol.toUpperCase() === "AAPL" ? [...aaplDirectSources, ...commonSources] : commonSources;
+  return [...(directSourcesBySymbol[symbol.toUpperCase()] ?? []), ...commonSources];
 }

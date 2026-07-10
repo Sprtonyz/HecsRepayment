@@ -64,6 +64,28 @@ export async function fetchReadableArticleText(
 }
 
 async function resolveRedirects(initialUrl: string) {
+  // Google News RSS exposes an aggregation URL. Resolve it before retrieval so
+  // primary/reputable originals do not remain permanently classified as feeds.
+  try {
+    if (new URL(initialUrl).hostname.toLowerCase() === "news.google.com") {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5_000);
+      try {
+        const response = await fetch(initialUrl, {
+          headers: { "user-agent": ARTICLE_USER_AGENT },
+          redirect: "follow",
+          signal: controller.signal,
+        });
+        const resolvedUrl = response.url;
+        await response.body?.cancel();
+        if (resolvedUrl && resolvedUrl !== initialUrl) return resolvedUrl;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+  } catch {
+    // Continue to conservative manual redirects.
+  }
   let currentUrl = initialUrl;
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const controller = new AbortController();

@@ -3,7 +3,7 @@ import type { NewsSignal } from "@/lib/news/types";
 export const ACTIVE_DEEP_CONTEXT_SYMBOLS = ["AAPL", "NVDA", "AMZN", "TSLA", "SPCX"] as const;
 
 export type ActiveDeepContextSymbol = (typeof ACTIVE_DEEP_CONTEXT_SYMBOLS)[number];
-export type NewsSourceMethod = "rss" | "directFeed" | "api";
+export type NewsSourceMethod = "rss" | "directFeed" | "directPage" | "api";
 export type RetrievalStatus = "read" | "summaryOnly" | "unavailable" | "paywalled" | "blocked";
 export type EvidenceSourceTier = "primary" | "reputable" | "specialist" | "general" | "aggregator";
 export type EvidenceMateriality = "high" | "medium" | "low";
@@ -44,6 +44,7 @@ export type DiscoveredNewsCandidate = {
   url: string;
   publishedAt?: string;
   author?: string;
+  sourcePriority?: number;
   raw?: unknown;
 };
 
@@ -90,6 +91,7 @@ export type SourceAttempt = {
 export type TickerCollectionOutcome = {
   symbol: string;
   selected?: RetrievedNewsCandidate;
+  supporting: RetrievedNewsCandidate[];
   discoveredCount: number;
   rejected: RejectedNewsCandidate[];
   duplicatesRemoved: number;
@@ -103,6 +105,7 @@ export type DailyCollectionOutcome = {
   runKey: string;
   targetCount: number;
   selected: RetrievedNewsCandidate[];
+  supporting: RetrievedNewsCandidate[];
   sourceAttempts: SourceAttempt[];
   rejected: RejectedNewsCandidate[];
   tickerOutcomes: TickerCollectionOutcome[];

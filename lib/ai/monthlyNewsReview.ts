@@ -8,22 +8,31 @@ export async function generateAutomatedMonthlyNewsReview({
   symbol,
   reviewMonth,
   articles,
+  supportingArticles = [],
   coverageStatus,
   shortfallDayCount,
 }: {
   symbol: string;
   reviewMonth: string;
   articles: CachedNewsArticle[];
+  supportingArticles?: CachedNewsArticle[];
   coverageStatus: "complete" | "limited";
   shortfallDayCount: number;
 }) {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) throw new Error("OPENAI_API_KEY is required for automatic monthly news publication.");
-  if (articles.length === 0) throw new Error(`No persisted ${symbol} articles are available for ${reviewMonth}.`);
+  if (articles.length === 0 && supportingArticles.length === 0) {
+    throw new Error(`No persisted ${symbol} evidence is available for ${reviewMonth}.`);
+  }
 
   const model = process.env.OPENAI_MONTHLY_NEWS_MODEL?.trim() || DEFAULT_MONTHLY_NEWS_MODEL;
-  const deterministicDigest = buildNewsDigest(symbol, articles, `${reviewMonth}-28T23:59:59.000Z`);
-  const evidence = articles.map((article) => ({
+  const allEvidence = [
+    ...articles.map((article) => ({ article, evidenceClass: "strong" as const })),
+    ...supportingArticles.map((article) => ({ article, evidenceClass: "supporting" as const })),
+  ];
+  const deterministicDigest = buildNewsDigest(symbol, allEvidence.map((item) => item.article), `${reviewMonth}-28T23:59:59.000Z`);
+  const evidence = allEvidence.map(({ article, evidenceClass }) => ({
+    evidenceClass,
     title: article.title,
     publisher: article.source,
     publishedAt: article.publishedAt,
@@ -63,10 +72,12 @@ export async function generateAutomatedMonthlyNewsReview({
             reviewMonth,
             coverageStatus,
             shortfallDayCount,
+            strongEvidenceCount: articles.length,
+            supportingContextCount: supportingArticles.length,
             mandatoryDigest: deterministicDigest,
             outputRequirements: {
               appliedNewsDigest: "Preserve the mandatory digest counts and analysisMode codexReview; choose only signal, confidence, score and concise headlines consistently with the evidence.",
-              longTermThesisSignals: "Array of mechanism-focused, durable signals; each item includes theme, direction, materiality and judgement. Weight only strong-evidence-v1 records with a score of 70 or more as high-quality evidence; treat legacy-unscored records as supporting context only.",
+              longTermThesisSignals: "Array of mechanism-focused, durable signals; each item includes theme, direction, materiality and judgement. Only evidenceClass strong records may establish a conclusion. evidenceClass supporting items may corroborate a strong item or identify an unresolved theme, never independently establish a conclusion.",
               staleOrNoisyItems: "Array of excluded or downweighted items with a reason. Include duplicate, price-action, thin-summary, low-focus and low-quality caveats where relevant.",
               unresolvedThemes: "Array of specific questions that evidence cannot resolve.",
               suggestedGuideImpact: "Object with rationale, expectedAdjustmentPercent, depositSuggestion and newsSignal. This is decision support, not a price target.",
@@ -101,6 +112,8 @@ export async function generateAutomatedMonthlyNewsReview({
     negativeArticleCount: deterministicDigest.negativeArticleCount,
     neutralArticleCount: deterministicDigest.neutralArticleCount,
     analysisMode: "codexReview",
+    strongEvidenceCount: articles.length,
+    supportingContextCount: supportingArticles.length,
   };
   return { model, review };
 }

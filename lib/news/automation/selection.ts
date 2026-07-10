@@ -35,7 +35,7 @@ export function scoreCandidate(candidate: DiscoveredNewsCandidate, profile: Tick
   const text = `${candidate.title} ${candidate.summary ?? ""}`.toLowerCase();
   const aliasMatches = profile.aliases.filter((alias) => text.includes(alias.toLowerCase())).length;
   const topicMatches = profile.topics.filter((topic) => text.includes(topic.toLowerCase())).length;
-  const sourceBoost = candidate.sourceMethod === "directFeed"
+  const sourceBoost = candidate.sourceMethod === "directFeed" || candidate.sourceMethod === "directPage"
     ? 35
     : candidate.sourceId.includes("official")
       ? 30
@@ -57,12 +57,17 @@ export function rejectUnsuitableCandidates(
   const rejected: RejectedNewsCandidate[] = [];
   const seen = new Set<string>();
 
-  for (const candidate of candidates) {
+  const ordered = [...candidates].sort(
+    (left, right) =>
+      (right.sourcePriority ?? 0) - (left.sourcePriority ?? 0) ||
+      (right.publishedAt ?? "").localeCompare(left.publishedAt ?? ""),
+  );
+  for (const candidate of ordered) {
     const text = `${candidate.title} ${candidate.summary ?? ""}`.toLowerCase();
     const aliases = profile.aliases.some((alias) => text.includes(alias.toLowerCase()));
     const titleKey = normalizedTitle(candidate.title);
     const key = `${candidate.symbol}:${titleKey}`;
-    const reason = !aliases && candidate.sourceMethod !== "directFeed"
+    const reason = !aliases && candidate.sourceMethod !== "directFeed" && candidate.sourceMethod !== "directPage"
       ? "company-not-mentioned"
       : hasRoundupHeadline(candidate.title)
         ? "multi-company-roundup"
@@ -175,6 +180,19 @@ export function selectBestTickerStory(candidates: RetrievedNewsCandidate[]) {
     )[0];
 }
 
+/** Supporting context never fills the strict daily target. */
+export function isSupportingContext(candidate: RetrievedNewsCandidate) {
+  const nonThresholdFlags = candidate.qualityFlags.filter((flag) => flag !== "below-strong-evidence-threshold");
+  return (
+    candidate.retrievalStatus === "read" &&
+    candidate.qualityScore >= 55 &&
+    candidate.companyFocusScore >= 20 &&
+    candidate.materiality !== "low" &&
+    candidate.sourceTier !== "aggregator" &&
+    nonThresholdFlags.length === 0
+  );
+}
+
 function hasRoundupHeadline(title: string) {
   return ROUNDUP_PATTERNS.some((pattern) => pattern.test(title));
 }
@@ -192,7 +210,7 @@ function countMatches(value: string, pattern: RegExp) {
 }
 
 function sourceTierFor(candidate: RetrievedNewsCandidate): EvidenceSourceTier {
-  if (candidate.sourceMethod === "directFeed") return "primary";
+  if (candidate.sourceMethod === "directFeed" || candidate.sourceMethod === "directPage") return "primary";
   let hostname = "";
   try {
     hostname = new URL(candidate.canonicalUrl).hostname.toLowerCase();

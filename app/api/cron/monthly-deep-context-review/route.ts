@@ -6,6 +6,7 @@ import {
   getAutomatedMonthlyCoverage,
   getAutomatedMonthlyReportStatus,
   getAutomatedNewsArticlesForMonth,
+  getAutomatedSupportingNewsForMonth,
   saveAutomatedMonthlyReport,
 } from "@/lib/shared-news/automationStore";
 
@@ -26,6 +27,7 @@ export async function GET(request: NextRequest) {
         continue;
       }
       const articles = await getAutomatedNewsArticlesForMonth(symbol, reviewMonth);
+      const supportingArticles = await getAutomatedSupportingNewsForMonth(symbol, reviewMonth);
       try {
         await saveAutomatedMonthlyReport({
           symbol,
@@ -39,6 +41,7 @@ export async function GET(request: NextRequest) {
           symbol,
           reviewMonth,
           articles,
+          supportingArticles,
           coverageStatus,
           shortfallDayCount: coverage.daysWithShortfall,
         });
@@ -60,7 +63,7 @@ export async function GET(request: NextRequest) {
           model: generated.model,
           report: generated.review,
         });
-        results.push({ symbol, status: "published", articleCount: articles.length });
+        results.push({ symbol, status: "published", strongEvidenceCount: articles.length, supportingContextCount: supportingArticles.length });
       } catch (error) {
         await saveAutomatedMonthlyReport({
           symbol,

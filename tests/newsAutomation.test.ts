@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getActiveDeepContextSymbols, getTickerNewsProfile } from "@/lib/news/automation/sourceRegistry";
+import { getActiveDeepContextSymbols, getNewsSourcesForSymbol, getTickerNewsProfile } from "@/lib/news/automation/sourceRegistry";
 import {
   assessStrongEvidence,
   groupNearDuplicates,
+  isSupportingContext,
   rejectUnsuitableCandidates,
   scoreCandidate,
   selectBestTickerStory,
@@ -13,6 +14,14 @@ import type { DiscoveredNewsCandidate, RetrievedNewsCandidate } from "@/lib/news
 describe("automated Deep Context news selection", () => {
   it("defaults to the five configured Deep Context tickers", () => {
     expect(getActiveDeepContextSymbols()).toEqual(["AAPL", "NVDA", "AMZN", "TSLA", "SPCX"]);
+  });
+
+  it("uses a first-party source before discovery feeds for every active ticker", () => {
+    for (const symbol of getActiveDeepContextSymbols()) {
+      const source = getNewsSourcesForSymbol(symbol)[0];
+      expect(source?.priority).toBe(100);
+      expect(["directFeed", "directPage"]).toContain(source?.method);
+    }
   });
 
   it("rejects price-action noise and retains company-specific candidates", () => {
@@ -81,6 +90,19 @@ describe("automated Deep Context news selection", () => {
 
   it("does not fabricate a selected article when every candidate is blocked", () => {
     expect(selectBestTickerStory([retrieved("Apple update", 80, "blocked")])).toBeUndefined();
+  });
+
+  it("keeps credible sub-threshold context out of the daily target", () => {
+    const context = {
+      ...retrieved("Apple reports an update", 60, "read", "Apple announced a material update. ".repeat(40), "https://www.apple.com/newsroom/update"),
+      qualityScore: 62,
+      companyFocusScore: 24,
+      materiality: "medium" as const,
+      sourceTier: "primary" as const,
+      qualityFlags: ["below-strong-evidence-threshold"],
+    };
+    expect(isSupportingContext(context)).toBe(true);
+    expect(selectBestTickerStory([context])).toBeUndefined();
   });
 });
 
