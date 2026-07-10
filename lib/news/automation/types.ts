@@ -15,6 +15,8 @@ export type TickerNewsProfile = {
   aliases: string[];
   topics: string[];
   officialDomains?: string[];
+  /** Regulators and mission authorities that can publish primary evidence. */
+  primaryDomains?: string[];
 };
 
 export type NewsSourceDefinition = {

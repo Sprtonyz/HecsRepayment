@@ -217,7 +217,7 @@ function sourceTierFor(candidate: RetrievedNewsCandidate): EvidenceSourceTier {
   } catch {
     return "aggregator";
   }
-  if (matchesDomain(hostname, ["sec.gov", "apple.com", "aboutamazon.com", "nvidianews.nvidia.com", "ir.tesla.com", "spacex.com"])) {
+  if (matchesDomain(hostname, ["sec.gov", "apple.com", "aboutamazon.com", "nvidianews.nvidia.com", "ir.tesla.com", "spacex.com", "nasa.gov", "faa.gov", "ftc.gov", "nhtsa.gov", "europa.eu", "bis.gov"])) {
     return "primary";
   }
   if (matchesDomain(hostname, ["reuters.com", "apnews.com", "ft.com", "bloomberg.com", "wsj.com", "nytimes.com"])) {

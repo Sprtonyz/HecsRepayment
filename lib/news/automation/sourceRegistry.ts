@@ -7,6 +7,7 @@ const profiles: Record<string, TickerNewsProfile> = {
     aliases: ["Apple", "Apple Inc", "AAPL"],
     topics: ["earnings", "services", "iPhone", "Apple Intelligence", "App Store", "China", "regulation"],
     officialDomains: ["apple.com", "investor.apple.com"],
+    primaryDomains: ["apple.com", "investor.apple.com", "sec.gov", "europa.eu"],
   },
   NVDA: {
     symbol: "NVDA",
@@ -14,6 +15,7 @@ const profiles: Record<string, TickerNewsProfile> = {
     aliases: ["NVIDIA", "Nvidia", "NVDA"],
     topics: ["data center", "AI", "GPU", "Blackwell", "earnings", "China", "supply chain"],
     officialDomains: ["nvidianews.nvidia.com", "investor.nvidia.com"],
+    primaryDomains: ["nvidianews.nvidia.com", "investor.nvidia.com", "sec.gov", "bis.gov"],
   },
   AMZN: {
     symbol: "AMZN",
@@ -21,6 +23,7 @@ const profiles: Record<string, TickerNewsProfile> = {
     aliases: ["Amazon", "Amazon.com", "AMZN", "AWS"],
     topics: ["AWS", "retail", "advertising", "Prime", "earnings", "regulation"],
     officialDomains: ["aboutamazon.com", "ir.aboutamazon.com"],
+    primaryDomains: ["aboutamazon.com", "ir.aboutamazon.com", "sec.gov", "ftc.gov"],
   },
   TSLA: {
     symbol: "TSLA",
@@ -28,6 +31,7 @@ const profiles: Record<string, TickerNewsProfile> = {
     aliases: ["Tesla", "TSLA"],
     topics: ["EV", "deliveries", "FSD", "energy storage", "China", "margins", "regulation"],
     officialDomains: ["ir.tesla.com", "tesla.com"],
+    primaryDomains: ["ir.tesla.com", "tesla.com", "sec.gov", "nhtsa.gov"],
   },
   SPCX: {
     symbol: "SPCX",
@@ -35,6 +39,7 @@ const profiles: Record<string, TickerNewsProfile> = {
     aliases: ["SpaceX", "Space Exploration Technologies", "SPCX"],
     topics: ["Starlink", "Starship", "launch", "NASA", "valuation", "satellite"],
     officialDomains: ["spacex.com"],
+    primaryDomains: ["spacex.com", "nasa.gov", "faa.gov"],
   },
 };
 
@@ -44,13 +49,13 @@ const googleNewsUrl = (query: string) =>
 const commonSources: NewsSourceDefinition[] = [
   {
     id: "google-news-official-source-rss",
-    label: "Official company sources via Google News RSS",
+    label: "Primary company and authority sources via Google News RSS",
     method: "rss",
     priority: 90,
     allowedDomains: ["news.google.com"],
     buildUrl: (profile) =>
       googleNewsUrl(
-        `${(profile.officialDomains ?? []).map((domain) => `site:${domain}`).join(" OR ")} "${profile.companyName}" when:7d`,
+        `${(profile.primaryDomains ?? profile.officialDomains ?? []).map((domain) => `site:${domain}`).join(" OR ")} "${profile.companyName}" when:7d`,
       ),
   },
   {
