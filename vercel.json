@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/deep-context-news",
+      "schedule": "30 21 * * 1-5"
+    },
+    {
+      "path": "/api/cron/monthly-deep-context-review",
+      "schedule": "15 22 1-3 * *"
+    }
+  ]
+}

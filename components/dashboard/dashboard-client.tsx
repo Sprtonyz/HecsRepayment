@@ -959,7 +959,7 @@ export function DashboardClient() {
       const failed = results.filter((item) => item.error).map((item) => item.symbol);
       const messageParts = [];
       if (fetched.length > 0) {
-        messageParts.push(`Fetched ${fetched.join(", ")}`);
+        messageParts.push(`Loaded stored ${fetched.join(", ")}`);
       }
       if (failed.length > 0) {
         messageParts.push(`Failed for ${failed.join(", ")}`);
@@ -970,13 +970,13 @@ export function DashboardClient() {
         message:
           messageParts.length > 0
             ? `${messageParts.join(". ")}.`
-            : "No comparison news was fetched.",
+            : "No stored comparison news is available yet.",
       });
       refreshComparisonReviews();
     } catch (error) {
       setCodexReviewStatus({
         tone: "error",
-        message: error instanceof Error ? error.message : "Could not fetch comparison news.",
+        message: error instanceof Error ? error.message : "Could not load stored comparison news.",
       });
     } finally {
       setIsFetchingCodexArticles(false);
@@ -1053,9 +1053,9 @@ export function DashboardClient() {
       setCodexReviewLookup({ lookupKey: codexReviewLookupKey });
       setCodexReviewStatus({
         tone: "success",
-        message: `Fetched ${result.articleCount} ${settings.baseTicker} article${
+        message: `Loaded ${result.articleCount} stored ${settings.baseTicker} article${
           result.articleCount === 1 ? "" : "s"
-        } from the free news feeds. Prepare a review after the cache looks right.`,
+        } from the automated collection. The monthly review publishes automatically.`,
       });
     } catch (error) {
       setCodexReviewStatus({
@@ -1385,11 +1385,11 @@ export function DashboardClient() {
                 <div className="rounded-lg border bg-background p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <p className="text-sm font-medium">Monthly Codex review</p>
+                      <p className="text-sm font-medium">Automatic monthly Codex review</p>
                       <p className="mt-2 text-sm text-muted-foreground">
-                        {codexReviewIncludedCount} of {codexReviewArticles.length} cached{" "}
+                        {codexReviewIncludedCount} of {codexReviewArticles.length} stored{" "}
                         {settings.baseTicker} article{codexReviewArticles.length === 1 ? "" : "s"}{" "}
-                        ready for {codexReviewMonth}. {cachedAaplArticles.length} total cached{" "}
+                        ready for {codexReviewMonth}. {cachedAaplArticles.length} total collected{" "}
                         {settings.baseTicker} article{cachedAaplArticles.length === 1 ? "" : "s"}.
                       </p>
                     </div>
@@ -1401,7 +1401,7 @@ export function DashboardClient() {
                         size="sm"
                         variant="outline"
                       >
-                        {isFetchingCodexArticles ? "Fetching..." : `Fetch ${settings.baseTicker} articles`}
+                        {isFetchingCodexArticles ? "Loading..." : `Load stored ${settings.baseTicker} articles`}
                         <RefreshCw className={cn("h-4 w-4", isFetchingCodexArticles && "animate-spin")} />
                       </Button>
                       <Button
@@ -1416,7 +1416,7 @@ export function DashboardClient() {
                         size="sm"
                         variant="outline"
                       >
-                        {isPreparingCodexReview ? "Preparing..." : "Prepare bundle"}
+                        {isPreparingCodexReview ? "Preparing..." : "Prepare local fallback"}
                         <FileText className="h-4 w-4" />
                       </Button>
                       <Button
@@ -1524,7 +1524,7 @@ export function DashboardClient() {
                 size="sm"
                 variant="default"
               >
-                {isFetchingCodexArticles ? "Fetching all..." : "Fetch all news"}
+                {isFetchingCodexArticles ? "Loading all..." : "Load stored news"}
                 <RefreshCw className={cn("h-4 w-4", isFetchingCodexArticles && "animate-spin")} />
               </Button>
               <Button

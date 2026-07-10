@@ -52,6 +52,16 @@ Once that is configured:
 - The deployed app will read a shared Codex review from Supabase first, then fall back to the local file route if no shared review exists yet.
 - If `SHARED_REVIEW_TOKEN` is set, both helper scripts send it as `x-review-token` automatically.
 
+## Automated Deep Context news
+
+The Deep Context collector is server-side and uses the five configured tickers (`AAPL`, `NVDA`, `AMZN`, `TSLA`, and `SPCX`) by default. It targets one qualified article per ticker for each US market day, records a shortfall instead of adding weak articles, stores cleaned text where permitted, and automatically publishes the monthly Codex review.
+
+1. Run [`supabase/news-automation-schema.sql`](./supabase/news-automation-schema.sql) after the shared-review schema.
+2. Set `CRON_SECRET` and `OPENAI_MONTHLY_NEWS_MODEL` in Vercel, as well as the existing Supabase secret key and `OPENAI_API_KEY`.
+3. Deploy [`vercel.json`](./vercel.json). It runs collection after the US market close at 21:30 UTC Monday–Friday and retries the previous month's report on the first three days of each month.
+
+The monitor data is stored in `news_collection_runs`, `news_source_attempts`, `news_article_rejections`, and `monthly_news_reports`. These capture targets, selected articles, full-text outcomes, attempted sources, rejection reasons, duplicate removal, shortfall days, retries and publication status. The cron endpoints require `Authorization: Bearer $CRON_SECRET`; they are not dashboard actions.
+
 ## Scripts
 
 ```bash

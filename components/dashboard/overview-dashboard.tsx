@@ -1129,7 +1129,7 @@ export function DashboardOverview({
 
                       <div className="mt-5 grid gap-3 sm:grid-cols-3">
                         <MiniStatusChip
-                          label="Fetched"
+                          label="Collected"
                           value={`${fetchedComparisonCount}/${COMPARISON_SYMBOLS.length}`}
                           note="Saved in the current review month"
                         />

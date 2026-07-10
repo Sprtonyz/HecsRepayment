@@ -1,5 +1,5 @@
 import type { CachedNewsAnalysis, CachedNewsArticle } from "@/lib/storage/types";
-import { fetchReadableArticleText } from "@/lib/news/articleText";
+import { fetchReadableArticleText, type ArticleTextResult } from "@/lib/news/articleText";
 import { buildCodexReviewBrief } from "@/lib/news/codexReviewBundle";
 import { buildReviewerSpec } from "@/lib/news/reviewerSpec";
 
@@ -60,10 +60,11 @@ export async function buildCodexReviewBundle({
 
   const articlesWithText = [];
   for (const article of selectedArticles) {
-    const articleText = await fetchReadableArticleText(
+    const storedText = storedArticleText(article.raw);
+    const articleText = storedText ?? (await fetchReadableArticleText(
       article.url,
       `${article.title}\n\n${article.summary ?? ""}`,
-    );
+    ));
     const existingAnalysis = analysesByArticleId.get(article.id);
     articlesWithText.push({
       id: article.id,
@@ -137,6 +138,24 @@ export async function buildCodexReviewBundle({
     bundle,
     filename: reviewBundleFilename(normalizedSymbol, reviewMonth),
   };
+}
+
+function storedArticleText(raw: unknown): ArticleTextResult | undefined {
+  if (!isRecord(raw) || typeof raw.cleanedText !== "string" || !raw.cleanedText.trim()) {
+    return undefined;
+  }
+  const status: ArticleTextResult["status"] =
+    raw.retrievalStatus === "read" || raw.retrievalStatus === "summaryOnly"
+      ? raw.retrievalStatus
+      : "summaryOnly";
+  return {
+    text: raw.cleanedText,
+    status,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function reviewBundleFilename(symbol: string, reviewMonth: string) {

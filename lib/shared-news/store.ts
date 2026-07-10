@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { getAutomatedNewsArticles, getAutomatedNewsArticlesForMonth } from "@/lib/shared-news/automationStore";
 import type { CachedNewsAnalysis, CachedNewsArticle } from "@/lib/storage/types";
 import { getSharedNewsConfig, isSharedNewsSyncEnabled } from "@/lib/shared-news/config";
 
@@ -196,6 +197,22 @@ export async function getLatestSharedNewsSnapshot(
   }
 
   const normalizedSymbol = symbol.toUpperCase();
+  try {
+    const automatedArticles = explicitReviewMonth
+      ? await getAutomatedNewsArticlesForMonth(normalizedSymbol, explicitReviewMonth)
+      : await getAutomatedNewsArticles(normalizedSymbol);
+    if (automatedArticles.length > 0) {
+      return {
+        enabled: true,
+        reviewMonth: explicitReviewMonth || reviewMonthForValue(automatedArticles[0].collectedAt),
+        sourceUpdatedAt: automatedArticles[0].lastFetchedAt || automatedArticles[0].cachedAt,
+        articles: automatedArticles,
+        analyses: [],
+      };
+    }
+  } catch {
+    // The legacy shared-news tables remain a compatibility fallback while the automation migration rolls out.
+  }
   const supabase = createSharedNewsClient();
   const reviewMonth = explicitReviewMonth || (await getLatestReviewMonth(normalizedSymbol));
 

@@ -1,0 +1,101 @@
+import type { NewsSourceDefinition, TickerNewsProfile } from "@/lib/news/automation/types";
+
+const profiles: Record<string, TickerNewsProfile> = {
+  AAPL: {
+    symbol: "AAPL",
+    companyName: "Apple",
+    aliases: ["Apple", "Apple Inc", "AAPL"],
+    topics: ["earnings", "services", "iPhone", "Apple Intelligence", "App Store", "China", "regulation"],
+  },
+  NVDA: {
+    symbol: "NVDA",
+    companyName: "NVIDIA",
+    aliases: ["NVIDIA", "Nvidia", "NVDA"],
+    topics: ["data center", "AI", "GPU", "Blackwell", "earnings", "China", "supply chain"],
+  },
+  AMZN: {
+    symbol: "AMZN",
+    companyName: "Amazon",
+    aliases: ["Amazon", "Amazon.com", "AMZN", "AWS"],
+    topics: ["AWS", "retail", "advertising", "Prime", "earnings", "regulation"],
+  },
+  TSLA: {
+    symbol: "TSLA",
+    companyName: "Tesla",
+    aliases: ["Tesla", "TSLA"],
+    topics: ["EV", "deliveries", "FSD", "energy storage", "China", "margins", "regulation"],
+  },
+  SPCX: {
+    symbol: "SPCX",
+    companyName: "SpaceX",
+    aliases: ["SpaceX", "Space Exploration Technologies", "SPCX"],
+    topics: ["Starlink", "Starship", "launch", "NASA", "valuation", "satellite"],
+  },
+};
+
+const googleNewsUrl = (query: string) =>
+  `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+
+const commonSources: NewsSourceDefinition[] = [
+  {
+    id: "yahoo-finance-rss",
+    label: "Yahoo Finance RSS",
+    method: "rss",
+    priority: 50,
+    allowedDomains: ["feeds.finance.yahoo.com", "finance.yahoo.com"],
+    buildUrl: (profile) =>
+      `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(profile.symbol)}&region=US&lang=en-US`,
+  },
+  {
+    id: "google-news-company-rss",
+    label: "Google News company RSS",
+    method: "rss",
+    priority: 40,
+    allowedDomains: ["news.google.com"],
+    buildUrl: (profile) => googleNewsUrl(`"${profile.companyName}" OR ${profile.symbol} when:7d`),
+  },
+  {
+    id: "google-news-fundamentals-rss",
+    label: "Google News fundamentals RSS",
+    method: "rss",
+    priority: 45,
+    allowedDomains: ["news.google.com"],
+    buildUrl: (profile) =>
+      googleNewsUrl(`"${profile.companyName}" (${profile.topics.slice(0, 4).join(" OR ")}) when:7d`),
+  },
+];
+
+const aaplDirectSources: NewsSourceDefinition[] = [
+  {
+    id: "apple-newsroom-rss",
+    label: "Apple Newsroom RSS",
+    method: "directFeed",
+    priority: 100,
+    allowedDomains: ["apple.com"],
+    buildUrl: () => "https://www.apple.com/newsroom/rss-feed.rss",
+  },
+];
+
+export function getTickerNewsProfile(symbol: string): TickerNewsProfile {
+  const normalized = symbol.toUpperCase();
+  return (
+    profiles[normalized] ?? {
+      symbol: normalized,
+      companyName: normalized,
+      aliases: [normalized],
+      topics: ["earnings", "revenue", "regulation", "competition"],
+    }
+  );
+}
+
+export function getActiveDeepContextSymbols() {
+  const configured = process.env.DEEP_CONTEXT_NEWS_SYMBOLS
+    ?.split(",")
+    .map((symbol) => symbol.trim().toUpperCase())
+    .filter((symbol) => /^[A-Z0-9.-]{1,12}$/.test(symbol));
+  return configured && configured.length > 0 ? Array.from(new Set(configured)) : Object.keys(profiles);
+}
+
+export function getNewsSourcesForSymbol(symbol: string): NewsSourceDefinition[] {
+  return symbol.toUpperCase() === "AAPL" ? [...aaplDirectSources, ...commonSources] : commonSources;
+}

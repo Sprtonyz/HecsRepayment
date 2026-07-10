@@ -242,6 +242,7 @@ type MarketSplitApiEvent = {
 type NewsApiArticle = Omit<CachedNewsArticle, "raw" | "cachedAt" | "collectedAt" | "lastFetchedAt">;
 type NewsApiResponse = {
   articles?: NewsApiArticle[];
+  automated?: boolean;
   aiAnalysisMode?: CachedNewsAnalysis["analysisMode"];
   sharedSync?: {
     enabled: boolean;
@@ -478,7 +479,7 @@ async function saveNewsRefresh({
   await indexedDbAdapter.saveNewsArticles(articles);
 
   const aiAnalysisMode = data.aiAnalysisMode === "performance" ? "performance" : "testing";
-  const articlesForAi = shouldRunDailyAiArticleAnalysis(existingAnalyses, symbol, aiAnalysisMode)
+  const articlesForAi = !data.automated && shouldRunDailyAiArticleAnalysis(existingAnalyses, symbol, aiAnalysisMode)
     ? selectArticlesForAiAnalysis(articles, existingAnalyses, symbol, aiAnalysisMode)
     : [];
   let savedAnalysisCount = 0;

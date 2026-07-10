@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAiNewsAnalysisMode } from "@/lib/ai/articleAnalysis";
 import { fetchFreeNewsDigest } from "@/lib/news/freeNewsProvider";
+import { buildNewsDigest } from "@/lib/news/sentiment";
+import { getAutomatedNewsArticles } from "@/lib/shared-news/automationStore";
+import { isSharedNewsSyncEnabled } from "@/lib/shared-news/config";
 import { upsertSharedNewsArticles } from "@/lib/shared-news/store";
 
 export async function GET(request: NextRequest) {
@@ -12,6 +15,22 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    if (isSharedNewsSyncEnabled()) {
+      const articles = await getAutomatedNewsArticles(symbol);
+      const digest = buildNewsDigest(symbol, articles);
+      return NextResponse.json({
+        ...digest,
+        automated: true,
+        aiAnalysisMode: getAiNewsAnalysisMode(),
+        sharedSync: {
+          enabled: true,
+          synced: true,
+          articleCount: articles.length,
+          sourceUpdatedAt: articles[0]?.lastFetchedAt || articles[0]?.cachedAt,
+        },
+      });
+    }
+
     const digest = await fetchFreeNewsDigest(symbol);
     const syncedAt = new Date().toISOString();
     let sharedSync:
@@ -46,6 +65,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       ...digest,
+      automated: false,
       aiAnalysisMode: getAiNewsAnalysisMode(),
       sharedSync,
     });
