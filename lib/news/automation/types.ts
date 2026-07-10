@@ -5,12 +5,16 @@ export const ACTIVE_DEEP_CONTEXT_SYMBOLS = ["AAPL", "NVDA", "AMZN", "TSLA", "SPC
 export type ActiveDeepContextSymbol = (typeof ACTIVE_DEEP_CONTEXT_SYMBOLS)[number];
 export type NewsSourceMethod = "rss" | "directFeed" | "api";
 export type RetrievalStatus = "read" | "summaryOnly" | "unavailable" | "paywalled" | "blocked";
+export type EvidenceSourceTier = "primary" | "reputable" | "specialist" | "general" | "aggregator";
+export type EvidenceMateriality = "high" | "medium" | "low";
+export type EvidenceType = "primaryDisclosure" | "reportedEvent" | "commentary";
 
 export type TickerNewsProfile = {
   symbol: string;
   companyName: string;
   aliases: string[];
   topics: string[];
+  officialDomains?: string[];
 };
 
 export type NewsSourceDefinition = {
@@ -53,6 +57,14 @@ export type RetrievedNewsCandidate = DiscoveredNewsCandidate & {
   retrievedAt: string;
   relevanceScore: number;
   qualityScore: number;
+  companyFocusScore: number;
+  evidenceDepthScore: number;
+  sourceTier: EvidenceSourceTier;
+  materiality: EvidenceMateriality;
+  evidenceType: EvidenceType;
+  eventDate?: string;
+  evidencePolicyVersion: "strong-evidence-v1";
+  qualityFlags: string[];
   topic: string;
   duplicateGroupId?: string;
   signal: NewsSignal;

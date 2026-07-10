@@ -96,6 +96,11 @@ type AutomatedDailyBrief = {
     publishedAt?: string;
     raw?: {
       retrievalStatus?: string;
+      qualityScore?: number;
+      companyFocusScore?: number;
+      sourceTier?: string;
+      materiality?: string;
+      evidencePolicyVersion?: string;
     };
   };
   error?: string;
@@ -1201,12 +1206,15 @@ export function DashboardOverview({
                           ))
                         : dailyBriefs.map((item) => {
                             const retrievalStatus = item.article?.raw?.retrievalStatus;
+                            const strongEvidence =
+                              item.article?.raw?.evidencePolicyVersion === "strong-evidence-v1" &&
+                              (item.article.raw.qualityScore ?? 0) >= 70;
                             return (
                               <div key={item.symbol} className="flex min-h-44 flex-col rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
                                 <div className="flex items-start justify-between gap-3">
                                   <p className="text-lg font-semibold text-white">{item.symbol}</p>
-                                  <Badge variant={item.article ? "success" : "secondary"}>
-                                    {item.article ? "Collected" : "Shortfall"}
+                                  <Badge variant={item.article && strongEvidence ? "success" : "secondary"}>
+                                    {item.article ? strongEvidence ? "Strong evidence" : "Stored evidence" : "Shortfall"}
                                   </Badge>
                                 </div>
                                 {item.article ? (
@@ -1223,6 +1231,12 @@ export function DashboardOverview({
                                       <span>{item.article.source ?? "Source recorded"}</span>
                                       <span>•</span>
                                       <span>{retrievalStatus === "read" ? "Full text" : "Source summary"}</span>
+                                      {strongEvidence ? (
+                                        <>
+                                          <span>•</span>
+                                          <span>{Math.round(item.article.raw?.qualityScore ?? 0)}/100 quality</span>
+                                        </>
+                                      ) : null}
                                     </div>
                                   </>
                                 ) : (

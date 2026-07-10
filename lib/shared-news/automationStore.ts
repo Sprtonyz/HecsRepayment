@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { stableId } from "@/lib/news/automation/normalization";
+import { STRONG_EVIDENCE_THRESHOLD } from "@/lib/news/automation/selection";
 import type { DailyCollectionOutcome, RetrievedNewsCandidate } from "@/lib/news/automation/types";
 import type { CachedNewsArticle } from "@/lib/storage/types";
 import { getSharedNewsConfig, isSharedNewsSyncEnabled } from "@/lib/shared-news/config";
@@ -32,6 +33,9 @@ type StoredArticleRow = {
   failure_reason: string | null;
   content_hash: string;
   market_date: string;
+  relevance_score: number;
+  quality_score: number;
+  raw_source: unknown;
 };
 
 export async function claimAutomatedNewsCollection(
@@ -114,6 +118,9 @@ export async function persistAutomatedNewsCollection(runId: string, outcome: Dai
   const metrics = {
     dailyArticleTarget: outcome.targetCount,
     suitableArticlesCollected: outcome.selected.length,
+    strongEvidenceTarget: outcome.targetCount,
+    strongEvidenceCollected: outcome.selected.length,
+    strongEvidenceThreshold: STRONG_EVIDENCE_THRESHOLD,
     fullTextRetrievalSuccesses: outcome.fullTextRetrievalSuccesses,
     fullTextRetrievalFailures: outcome.fullTextRetrievalFailures,
     sourcesAttempted: outcome.sourceAttempts.length,
@@ -292,11 +299,21 @@ function toArticleRow(runId: string, marketDate: string, article: RetrievedNewsC
       retrievalStatus: article.retrievalStatus,
       failureReason: article.failureReason,
       duplicateGroupId: article.duplicateGroupId,
+      qualityScore: article.qualityScore,
+      companyFocusScore: article.companyFocusScore,
+      evidenceDepthScore: article.evidenceDepthScore,
+      sourceTier: article.sourceTier,
+      materiality: article.materiality,
+      evidenceType: article.evidenceType,
+      eventDate: article.eventDate,
+      evidencePolicyVersion: article.evidencePolicyVersion,
+      qualityFlags: article.qualityFlags,
     },
   };
 }
 
 function fromStoredArticleRow(row: StoredArticleRow): CachedNewsArticle {
+  const rawSource = isRecord(row.raw_source) ? row.raw_source : {};
   return {
     id: row.id,
     symbol: row.symbol,
@@ -313,6 +330,7 @@ function fromStoredArticleRow(row: StoredArticleRow): CachedNewsArticle {
     signalScore: row.signal_score,
     matchedTerms: row.matched_terms ?? [],
     raw: {
+      ...rawSource,
       canonicalUrl: row.canonical_url,
       cleanedText: row.cleaned_text,
       contentHash: row.content_hash,
@@ -320,8 +338,14 @@ function fromStoredArticleRow(row: StoredArticleRow): CachedNewsArticle {
       retrievalStatus: row.retrieval_status,
       failureReason: row.failure_reason,
       marketDate: row.market_date,
+      relevanceScore: row.relevance_score,
+      qualityScore: row.quality_score,
     },
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function countBy(values: string[]) {

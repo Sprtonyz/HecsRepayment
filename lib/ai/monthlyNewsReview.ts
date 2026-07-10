@@ -31,6 +31,15 @@ export async function generateAutomatedMonthlyNewsReview({
     topic: rawString(article.raw, "topic") || "other",
     duplicateGroupId: rawString(article.raw, "duplicateGroupId"),
     retrievalStatus: rawString(article.raw, "retrievalStatus") || "summaryOnly",
+    qualityScore: rawNumber(article.raw, "qualityScore"),
+    companyFocusScore: rawNumber(article.raw, "companyFocusScore"),
+    evidenceDepthScore: rawNumber(article.raw, "evidenceDepthScore"),
+    sourceTier: rawString(article.raw, "sourceTier") || "unknown",
+    materiality: rawString(article.raw, "materiality") || "unknown",
+    evidenceType: rawString(article.raw, "evidenceType") || "unknown",
+    eventDate: rawString(article.raw, "eventDate") || article.publishedAt,
+    evidencePolicyVersion: rawString(article.raw, "evidencePolicyVersion") || "legacy-unscored",
+    qualityFlags: rawStringArray(article.raw, "qualityFlags"),
     excerpt: (rawString(article.raw, "cleanedText") || article.summary || "").slice(0, 1800),
   }));
 
@@ -57,8 +66,8 @@ export async function generateAutomatedMonthlyNewsReview({
             mandatoryDigest: deterministicDigest,
             outputRequirements: {
               appliedNewsDigest: "Preserve the mandatory digest counts and analysisMode codexReview; choose only signal, confidence, score and concise headlines consistently with the evidence.",
-              longTermThesisSignals: "Array of mechanism-focused, durable signals; each item includes theme, direction, materiality and judgement.",
-              staleOrNoisyItems: "Array of excluded items with a reason. Include duplicate, price-action and thin-summary caveats where relevant.",
+              longTermThesisSignals: "Array of mechanism-focused, durable signals; each item includes theme, direction, materiality and judgement. Weight only strong-evidence-v1 records with a score of 70 or more as high-quality evidence; treat legacy-unscored records as supporting context only.",
+              staleOrNoisyItems: "Array of excluded or downweighted items with a reason. Include duplicate, price-action, thin-summary, low-focus and low-quality caveats where relevant.",
               unresolvedThemes: "Array of specific questions that evidence cannot resolve.",
               suggestedGuideImpact: "Object with rationale, expectedAdjustmentPercent, depositSuggestion and newsSignal. This is decision support, not a price target.",
               rationale: "Concise evidence-weighted synthesis that explicitly notes limited coverage when applicable.",
@@ -115,6 +124,16 @@ function parseReviewJson(value: string) {
 
 function rawString(raw: unknown, key: string) {
   return isRecord(raw) && typeof raw[key] === "string" ? raw[key] : undefined;
+}
+
+function rawNumber(raw: unknown, key: string) {
+  return isRecord(raw) && typeof raw[key] === "number" && Number.isFinite(raw[key]) ? raw[key] : undefined;
+}
+
+function rawStringArray(raw: unknown, key: string) {
+  return isRecord(raw) && Array.isArray(raw[key])
+    ? raw[key].filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

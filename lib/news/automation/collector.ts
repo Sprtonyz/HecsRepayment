@@ -3,10 +3,12 @@ import { scoreNewsText } from "@/lib/news/sentiment";
 import { contentHash, excerpt, normalizeUrl, stableId } from "@/lib/news/automation/normalization";
 import { getNewsSourcesForSymbol, getTickerNewsProfile } from "@/lib/news/automation/sourceRegistry";
 import {
+  assessStrongEvidence,
   groupNearDuplicates,
   rejectUnsuitableCandidates,
   scoreCandidate,
   selectBestTickerStory,
+  strongEvidenceRejectionReason,
 } from "@/lib/news/automation/selection";
 import type {
   DailyCollectionOutcome,
@@ -106,16 +108,42 @@ async function collectTickerNews({
     3,
     ({ candidate, relevanceScore }) => retrieveCandidate(candidate, relevanceScore),
   );
-  const { representatives, removed } = groupNearDuplicates(retrieved);
-  const selected = selectBestTickerStory(representatives);
+  const { representatives, removed } = groupNearDuplicates(
+    retrieved.map((candidate) => assessStrongEvidence(candidate, profile)),
+  );
+  const evidenceRejected = representatives.flatMap((candidate) => {
+    const reason = strongEvidenceRejectionReason(candidate);
+    return reason
+      ? [{
+          candidate: {
+            ...candidate,
+            raw: {
+              discovered: candidate.raw,
+              qualityScore: candidate.qualityScore,
+              companyFocusScore: candidate.companyFocusScore,
+              evidenceDepthScore: candidate.evidenceDepthScore,
+              sourceTier: candidate.sourceTier,
+              materiality: candidate.materiality,
+              evidenceType: candidate.evidenceType,
+              qualityFlags: candidate.qualityFlags,
+            },
+          },
+          reason,
+          rejectedAt: new Date().toISOString(),
+        }]
+      : [];
+  });
+  const strongCandidates = representatives.filter((candidate) => !strongEvidenceRejectionReason(candidate));
+  const selected = selectBestTickerStory(strongCandidates);
   const retrievalSuccesses = retrieved.filter((item) => item.retrievalStatus === "read").length;
   const retrievalFailures = retrieved.length - retrievalSuccesses;
+  const allRejected = [...filtered.rejected, ...evidenceRejected];
 
   return {
     symbol,
     selected,
     discoveredCount: discovered.length,
-    rejected: filtered.rejected,
+    rejected: allRejected,
     duplicatesRemoved: removed,
     retrievalSuccesses,
     retrievalFailures,
@@ -125,7 +153,9 @@ async function collectTickerNews({
         ? "no-candidates-discovered"
         : ranked.length === 0
           ? "no-suitable-candidates"
-          : "no-retrievable-qualified-candidates",
+          : strongCandidates.length === 0
+            ? "no-strong-evidence-candidates"
+            : "no-retrievable-qualified-candidates",
   };
 }
 
@@ -162,6 +192,13 @@ async function retrieveCandidate(candidate: DiscoveredNewsCandidate, relevanceSc
     retrievedAt: new Date().toISOString(),
     relevanceScore,
     qualityScore: relevanceScore + fullTextBoost + sourceBoost,
+    companyFocusScore: 0,
+    evidenceDepthScore: 0,
+    sourceTier: "aggregator",
+    materiality: "low",
+    evidenceType: "commentary",
+    evidencePolicyVersion: "strong-evidence-v1",
+    qualityFlags: [],
     topic: inferTopic(candidate),
     signal: sentiment.signal,
     signalScore: sentiment.signalScore,

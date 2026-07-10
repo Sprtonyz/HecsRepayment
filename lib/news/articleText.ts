@@ -9,6 +9,10 @@ const MAX_ARTICLE_CHARS = 12_000;
 const MIN_READABLE_CHARS = 800;
 const ARTICLE_USER_AGENT = "AAPL Catch-Up Tracker/1.0 permitted-news-collector";
 const robotsPolicyCache = new Map<string, Promise<{ allowed: boolean; reason?: string }>>();
+const BOILERPLATE_LINE_PATTERNS = [
+  /^(oops,? something went wrong|skip to (navigation|main content|right column)|terms and privacy|your privacy choices)$/i,
+  /^(subscribe|sign up|advertisement|advertisement - continue reading below)$/i,
+];
 
 export async function fetchReadableArticleText(
   url: string,
@@ -41,15 +45,16 @@ export async function fetchReadableArticleText(
       ? normalizeText(raw)
       : extractTextFromHtml(raw);
 
-    if (readable.length >= MIN_READABLE_CHARS) {
+    const cleaned = removeArticleBoilerplate(readable);
+    if (cleaned.length >= MIN_READABLE_CHARS) {
       return {
-        text: readable.slice(0, MAX_ARTICLE_CHARS),
+        text: cleaned.slice(0, MAX_ARTICLE_CHARS),
         status: "read",
         canonicalUrl: response.url || url,
       };
     }
 
-    return fallbackArticleText(fallbackText || readable, "insufficient-readable-text", response.url || url);
+    return fallbackArticleText(fallbackText || cleaned, "insufficient-readable-text", response.url || url);
   } catch (error) {
     return fallbackArticleText(
       fallbackText,
@@ -196,6 +201,15 @@ function normalizeText(value: string) {
     .replace(/\n\s+/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function removeArticleBoilerplate(value: string) {
+  return normalizeText(
+    value
+      .split(/\n+/)
+      .filter((line) => !BOILERPLATE_LINE_PATTERNS.some((pattern) => pattern.test(line.trim())))
+      .join("\n"),
+  );
 }
 
 function decodeHtmlEntities(value: string) {
