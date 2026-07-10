@@ -205,7 +205,10 @@ function buildHoldingComparisons({
         (growthMultiplier - 1) * (projectionRemainingMonths / holdingElapsedMonths) * 100,
         2,
       );
-      const projectedMultiplier = Math.max(0, 1 + projectedGrowthPercent / 100);
+      // A short observation window can extrapolate a temporary loss past -100%.
+      // Keep the holding's forward value anchored to its live value in that case;
+      // a real holding should not disappear from the mix or comparison.
+      const projectedMultiplier = Math.max(1, 1 + projectedGrowthPercent / 100);
       const currentValueUsd = roundMoney(decimal(shares).mul(currentPriceUsd));
       const projectedValueUsd = roundMoney(decimal(currentValueUsd).mul(projectedMultiplier));
 

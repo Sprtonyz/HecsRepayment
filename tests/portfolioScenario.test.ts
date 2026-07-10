@@ -106,4 +106,45 @@ describe("portfolio scenario comparison", () => {
     expect(spcx.currentPriceUsd).toBe(181.69);
     expect(spcx.growthMultiplier).toBeCloseTo(1.0564, 4);
   });
+
+  it("keeps a live holding in the mix when loss extrapolation would go below zero", () => {
+    const result = calculatePortfolioScenarioComparison({
+      benchmarkTicker: "AAPL",
+      benchmarkShares: 1,
+      trades: [
+        {
+          id: "trade-spcx",
+          date: "2026-05-01",
+          ticker: "SPCX",
+          side: "BUY",
+          shares: 5.462,
+          pricePerShare: 171.99,
+          currencyEntered: "USD",
+          fxRateToUsd: 1,
+          pricePerShareUsd: 171.99,
+          grossAmountUsd: 939.82,
+          feesUsd: 0,
+          totalAmountUsd: 939.82,
+          createdAt: "2026-05-01T00:00:00.000Z",
+          updatedAt: "2026-05-01T00:00:00.000Z",
+        },
+      ],
+      dailyPrices: [
+        { symbol: "AAPL", date: "2026-05-19", closeUsd: 100, provider: "manual" },
+        { symbol: "AAPL", date: "2026-07-11", closeUsd: 100, provider: "manual" },
+        { symbol: "SPCX", date: "2026-07-11", closeUsd: 147.56, provider: "manual" },
+      ],
+      splits: [],
+      asOfDate: "2026-07-11",
+      anchorDate: "2026-05-19",
+      projectionMonths: 53,
+      benchmarkTolerancePercent: 0,
+    });
+
+    const spcx = result.holdings[0];
+    expect(spcx.shares).toBe(5.462);
+    expect(spcx.currentValueUsd).toBeCloseTo(805.97, 2);
+    expect(spcx.projectedValueUsd).toBe(spcx.currentValueUsd);
+    expect(result.portfolioGrowthMultiplier).toBe(1);
+  });
 });
