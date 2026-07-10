@@ -30,7 +30,7 @@ import { useTrackerData } from "@/lib/storage/useTrackerData";
 import { cn } from "@/lib/utils";
 
 type TrackerDataOptions = NonNullable<Parameters<typeof useTrackerData>[0]>;
-const COMPARISON_SYMBOLS = ["AAPL", "NVDA", "AMZN", "TSLA", "SPACEX"] as const;
+const COMPARISON_SYMBOLS = ["AAPL", "NVDA", "AMZN", "TSLA", "SPCX"] as const;
 
 function sortComparisonReviews<T extends { rankScore: number }>(reviews: T[]) {
   return [...reviews].sort((left, right) => right.rankScore - left.rankScore);
@@ -81,6 +81,22 @@ type ComparisonReviewCard = {
       newsSignal?: string;
     };
     rationale?: string;
+  };
+  error?: string;
+};
+
+type AutomatedDailyBrief = {
+  symbol: string;
+  asOf?: string;
+  automated: boolean;
+  article?: {
+    title: string;
+    source?: string;
+    url?: string;
+    publishedAt?: string;
+    raw?: {
+      retrievalStatus?: string;
+    };
   };
   error?: string;
 };
@@ -329,6 +345,8 @@ export function DashboardOverview({
   const [comparisonReviews, setComparisonReviews] = useState<ComparisonReviewSeed[]>(() => {
     return sortComparisonReviews(initialComparisonReviews ?? []);
   });
+  const [dailyBriefs, setDailyBriefs] = useState<AutomatedDailyBrief[]>([]);
+  const [dailyBriefLoading, setDailyBriefLoading] = useState(true);
 
   useEffect(() => {
     let isActive = true;
@@ -405,6 +423,55 @@ export function DashboardOverview({
     };
   }, [codexReviewMonth]);
 
+  useEffect(() => {
+    let isActive = true;
+
+    Promise.all(
+      COMPARISON_SYMBOLS.map(async (symbol) => {
+        try {
+          const response = await fetch(`/api/news?symbol=${encodeURIComponent(symbol)}`, {
+            cache: "no-store",
+          });
+          if (!response.ok) {
+            return {
+              symbol,
+              automated: false,
+              error: "The latest article could not be loaded.",
+            } satisfies AutomatedDailyBrief;
+          }
+
+          const payload = (await response.json()) as {
+            asOf?: string;
+            automated?: boolean;
+            articles?: AutomatedDailyBrief["article"][];
+          };
+          return {
+            symbol,
+            asOf: payload.asOf,
+            automated: Boolean(payload.automated),
+            article: payload.articles?.[0],
+          } satisfies AutomatedDailyBrief;
+        } catch (error) {
+          return {
+            symbol,
+            automated: false,
+            error: error instanceof Error ? error.message : "The latest article could not be loaded.",
+          } satisfies AutomatedDailyBrief;
+        }
+      }),
+    ).then((results) => {
+      if (!isActive) {
+        return;
+      }
+      setDailyBriefs(results);
+      setDailyBriefLoading(false);
+    });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
   const loadedComparisonReviews = comparisonReviews.filter((item) => item.status === "loaded");
   const bestComparisonReview = loadedComparisonReviews[0];
   const fetchedComparisonCount = comparisonReviews.filter((item) => item.status !== "missing").length;
@@ -416,6 +483,13 @@ export function DashboardOverview({
     bestComparisonReview?.codexReview?.suggestedGuideImpact?.rationale ??
     bestComparisonReview?.codexReview?.rationale ??
     "Prepare the full comparison bundles to see which ticket is strongest.";
+  const dailyCollectedCount = dailyBriefs.filter((item) => item.article).length;
+  const dailyAutomatedCount = dailyBriefs.filter((item) => item.automated).length;
+  const latestDailyBriefAt = dailyBriefs
+    .map((item) => item.asOf)
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1);
 
   return (
     <AppShell title="Dashboard" subtitle="See your status at a glance. Less jargon, more meaning.">
@@ -1068,38 +1142,107 @@ export function DashboardOverview({
                     Deep context
                   </p>
                   <h2 className="text-2xl font-semibold tracking-tight sm:text-[2rem]">
-                    The rest of the dashboard, tucked into one calm place.
+                    Your automated market brief, with the deeper planning layers close by.
                   </h2>
                   <p className="max-w-3xl text-sm leading-6 text-slate-300 sm:text-base">
-                    Cross-stock comparison, portfolio reasoning, and the original detail layers are
-                    still here, just organized so the dashboard starts with the answer instead of the
-                    paperwork.
+                    One relevant article is collected for each tracked ticker on every US market day.
+                    Monthly reviews publish automatically once there is enough coverage to compare the
+                    longer-term picture.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge className="border-white/10 bg-white/10 text-white" variant="outline">
-                    Review month {codexReviewMonth}
+                    {dailyBriefLoading ? "Checking daily brief" : `${dailyCollectedCount}/${COMPARISON_SYMBOLS.length} collected`}
                   </Badge>
                   <Badge className="border-white/10 bg-white/10 text-white" variant="outline">
-                    {reviewedComparisonCount}/{COMPARISON_SYMBOLS.length} published
+                    {dailyAutomatedCount === COMPARISON_SYMBOLS.length && dailyCollectedCount > 0
+                      ? "Automated collection active"
+                      : `Review month ${codexReviewMonth}`}
                   </Badge>
                 </div>
               </div>
             </div>
             <CardContent className="p-5 sm:p-6">
-              <Tabs defaultValue="compare" className="w-full">
-                <TabsList className="grid h-auto w-full grid-cols-3 rounded-[1.4rem] border border-white/8 bg-white/5 p-1">
-                  <TabsTrigger value="compare">Compare stocks</TabsTrigger>
+              <Tabs defaultValue="daily" className="w-full">
+                <TabsList className="grid h-auto w-full grid-cols-2 rounded-[1.4rem] border border-white/8 bg-white/5 p-1 sm:grid-cols-4">
+                  <TabsTrigger value="daily">Daily brief</TabsTrigger>
+                  <TabsTrigger value="compare">Monthly review</TabsTrigger>
                   <TabsTrigger value="plan">Plan view</TabsTrigger>
                   <TabsTrigger value="details">Raw details</TabsTrigger>
                 </TabsList>
+
+                <TabsContent value="daily" className="mt-5">
+                  <div className="grid gap-4">
+                    <div className="flex flex-col gap-4 rounded-[1.6rem] border border-white/10 bg-white/5 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-400">Today&apos;s collected context</p>
+                        <h3 className="mt-2 text-2xl font-semibold tracking-tight text-white">
+                          {dailyBriefLoading
+                            ? "Loading the stored daily brief..."
+                            : dailyCollectedCount === COMPARISON_SYMBOLS.length
+                              ? "All tracked tickers are covered."
+                              : `${dailyCollectedCount} of ${COMPARISON_SYMBOLS.length} tracked tickers are covered.`}
+                        </h3>
+                        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
+                          The collector keeps any shortfall visible instead of filling the dashboard with a low-quality article.
+                          {latestDailyBriefAt ? ` Last refreshed ${format(new Date(latestDailyBriefAt), "d MMM, h:mm a")}.` : ""}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 sm:min-w-56">
+                        <MiniStatusChip label="Target" value={`${COMPARISON_SYMBOLS.length}/day`} note="One per ticker" />
+                        <MiniStatusChip label="Collected" value={`${dailyCollectedCount}/${COMPARISON_SYMBOLS.length}`} note="Stored articles" />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {dailyBriefLoading
+                        ? COMPARISON_SYMBOLS.map((symbol) => (
+                            <div key={symbol} className="min-h-44 animate-pulse rounded-[1.4rem] border border-white/10 bg-white/5 p-4" />
+                          ))
+                        : dailyBriefs.map((item) => {
+                            const retrievalStatus = item.article?.raw?.retrievalStatus;
+                            return (
+                              <div key={item.symbol} className="flex min-h-44 flex-col rounded-[1.4rem] border border-white/10 bg-white/5 p-4">
+                                <div className="flex items-start justify-between gap-3">
+                                  <p className="text-lg font-semibold text-white">{item.symbol}</p>
+                                  <Badge variant={item.article ? "success" : "secondary"}>
+                                    {item.article ? "Collected" : "Shortfall"}
+                                  </Badge>
+                                </div>
+                                {item.article ? (
+                                  <>
+                                    <a
+                                      className="mt-3 line-clamp-3 text-sm font-medium leading-6 text-white transition hover:text-emerald-300"
+                                      href={item.article.url}
+                                      rel="noreferrer"
+                                      target="_blank"
+                                    >
+                                      {item.article.title}
+                                    </a>
+                                    <div className="mt-auto flex flex-wrap gap-2 pt-4 text-xs text-slate-400">
+                                      <span>{item.article.source ?? "Source recorded"}</span>
+                                      <span>•</span>
+                                      <span>{retrievalStatus === "read" ? "Full text" : "Source summary"}</span>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <p className="mt-3 text-sm leading-6 text-slate-300">
+                                    {item.error ?? "No suitable article was stored for this ticker today."}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                    </div>
+                  </div>
+                </TabsContent>
 
                 <TabsContent value="compare" className="mt-5">
                   <div className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
                     <div className="rounded-[1.6rem] border border-white/10 bg-white/5 p-5 sm:p-6">
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                         <div>
-                          <p className="text-sm font-semibold text-slate-400">Strongest ticket</p>
+                          <p className="text-sm font-semibold text-slate-400">Automatic monthly review</p>
                           <h3 className="mt-2 text-3xl font-semibold tracking-tight text-white">
                             {bestComparisonReview?.symbol ?? "Loading"}
                           </h3>
