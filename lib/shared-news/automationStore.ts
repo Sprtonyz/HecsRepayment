@@ -91,10 +91,14 @@ export async function persistAutomatedNewsCollection(runId: string, outcome: Dai
     raw_source: article.raw_source,
   }));
 
+  const articleWrite = articleRows.length
+    ? await supabase.from("news_articles").upsert(articleRows, { onConflict: "symbol,market_date" })
+    : { error: null };
+  if (articleWrite.error) {
+    throw new Error(`Could not persist automated news collection: ${articleWrite.error.message}`);
+  }
+
   const writes = [
-    articleRows.length
-      ? supabase.from("news_articles").upsert(articleRows, { onConflict: "symbol,market_date" })
-      : Promise.resolve({ error: null }),
     sourceRows.length
       ? supabase.from("news_source_attempts").upsert(sourceRows, { onConflict: "run_id,source_id,symbol" })
       : Promise.resolve({ error: null }),
