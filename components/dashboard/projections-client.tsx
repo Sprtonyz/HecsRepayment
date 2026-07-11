@@ -762,8 +762,8 @@ export function ProjectionsClient({
             <div>
               <CardTitle>Portfolio Scenario Check</CardTitle>
               <p className="mt-1 text-sm text-muted-foreground">
-                Compares the live {scenarioComparison.benchmarkTicker} benchmark against the current portfolio mix.
-                The benchmark uses a fixed snapshot share count and today&apos;s price, with no forward price extrapolation.
+                Compares the live {scenarioComparison.benchmarkTicker} benchmark against a ledger-only portfolio forecast.
+                Each holding uses its rolling three active trading-day return across the remaining market days; unrecorded deposits are excluded.
               </p>
             </div>
             <Badge
@@ -791,12 +791,12 @@ export function ProjectionsClient({
                 note={`${scenarioComparison.benchmarkGrowthPercent.toFixed(1)}% change since the snapshot.`}
               />
               <ScenarioStat
-                label="Portfolio mix now"
-                value={formatCurrency(scenarioComparison.portfolioCurrentValueUsd, "USD")}
-                note={`${scenarioComparison.holdings.length} held ticker${scenarioComparison.holdings.length === 1 ? "" : "s"} valued at current market prices.`}
+                label="Portfolio mix target"
+                value={formatCurrency(scenarioComparison.portfolioProjectedValueUsd, "USD")}
+                note={`${scenarioComparison.holdings.length} ledger-held ticker${scenarioComparison.holdings.length === 1 ? "" : "s"}; ${scenarioComparison.remainingTradingDays} market days remain.`}
               />
               <ScenarioStat
-                label="Contribution projection"
+                label="Projected difference"
                 value={formatCurrency(Math.abs(scenarioComparison.projectedDifferenceUsd), "USD")}
                 note={`${scenarioComparison.projectedDifferencePercent >= 0 ? "+" : ""}${scenarioComparison.projectedDifferencePercent.toFixed(2)}% vs benchmark.`}
               />
@@ -813,7 +813,7 @@ export function ProjectionsClient({
                 <p className="mt-1">Projected difference: {formatCurrency(Math.abs(scenarioComparison.projectedDifferenceUsd), "USD")}.</p>
               </div>
               <p className="max-w-xl">
-                Assumption: the comparison excludes dividends and cash, so the signal stays focused on price growth only.
+                Assumption: this uses only ledger holdings, excludes future unrecorded deposits, dividends and cash, and ignores unchanged-price days in the rolling return.
               </p>
             </div>
           </CardContent>

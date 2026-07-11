@@ -10,6 +10,9 @@ export type PortfolioScenarioHoldingComparison = {
   anchorPriceUsd: number;
   anchorDate: string;
   growthMultiplier: number;
+  rollingDailyReturnPercent: number;
+  activeTradingDaysUsed: number;
+  remainingTradingDays: number;
   projectedGrowthPercent: number;
   currentValueUsd: number;
   projectedValueUsd: number;
@@ -54,6 +57,7 @@ export type PortfolioScenarioComparison = {
   holdings: PortfolioScenarioHoldingComparison[];
   anchorDate: string;
   projectionMonths: number;
+  remainingTradingDays: number;
   asOfDate: string;
 };
 
@@ -83,6 +87,7 @@ export function calculatePortfolioScenarioComparison(
     benchmarkAnchorPriceUsd > 0 ? benchmarkCurrentPriceUsd / benchmarkAnchorPriceUsd : 1;
   const benchmarkElapsedMonths = Math.max(1, monthsElapsedInclusive(anchorDate, asOfDate));
   const projectionRemainingMonths = Math.max(0, projectionMonths - benchmarkElapsedMonths);
+  const remainingTradingDays = projectionRemainingMonths * 21;
   // This is a live benchmark, not a forward price forecast. Its target is the
   // original share count at today's AAPL price; the percentage is strictly the
   // change from the fixed snapshot price.
@@ -98,7 +103,7 @@ export function calculatePortfolioScenarioComparison(
     quotes: input.quotes,
     asOfDate,
     anchorDate,
-    projectionRemainingMonths,
+    remainingTradingDays,
   });
   const holdingsCurrentValueUsd = roundMoney(
     holdings.reduce((total, holding) => total.plus(holding.currentValueUsd), decimal(0)),
@@ -110,18 +115,13 @@ export function calculatePortfolioScenarioComparison(
     holdingsCurrentValueUsd > 0
       ? roundPercent(decimal(holdingsProjectedValueUsd).div(holdingsCurrentValueUsd), 4)
       : 1;
-  const portfolioContributionTotalAud = roundMoney(
-    decimal(Math.max(0, input.portfolioContributionAud ?? 0)).mul(projectionMonths),
-  );
-  const portfolioContributionTotalUsd = roundMoney(
-    decimal(portfolioContributionTotalAud).mul(Math.max(0, input.audUsdRate ?? 1)),
-  );
-  const portfolioProjectedValueUsd =
-    input.portfolioContributionAud !== undefined
-      ? roundMoney(decimal(portfolioContributionTotalUsd).mul(portfolioGrowthMultiplier))
-      : holdingsProjectedValueUsd;
+  // Deliberately do not create future deposits or inferred purchases. New
+  // ledger buys join the projection only after they are actually recorded.
+  const portfolioContributionTotalAud = 0;
+  const portfolioContributionTotalUsd = 0;
+  const portfolioProjectedValueUsd = holdingsProjectedValueUsd;
 
-  const projectedDifferenceUsd = roundMoney(decimal(holdingsCurrentValueUsd).minus(benchmarkCurrentValueUsd));
+  const projectedDifferenceUsd = roundMoney(decimal(portfolioProjectedValueUsd).minus(benchmarkProjectedValueUsd));
   const projectedDifferencePercent =
     benchmarkProjectedValueUsd > 0
       ? roundPercent(
@@ -160,6 +160,7 @@ export function calculatePortfolioScenarioComparison(
     holdings,
     anchorDate,
     projectionMonths,
+    remainingTradingDays,
     asOfDate,
   };
 }
@@ -171,7 +172,7 @@ function buildHoldingComparisons({
   quotes,
   asOfDate,
   anchorDate,
-  projectionRemainingMonths,
+  remainingTradingDays,
 }: {
   trades: Trade[];
   splits: CachedSplit[];
@@ -179,7 +180,7 @@ function buildHoldingComparisons({
   quotes: CachedQuote[];
   asOfDate: string;
   anchorDate: string;
-  projectionRemainingMonths: number;
+  remainingTradingDays: number;
 }) {
   const tickers = Array.from(new Set(trades.map((trade) => trade.ticker.toUpperCase()))).sort();
   return tickers
@@ -202,16 +203,15 @@ function buildHoldingComparisons({
           ? marketAnchorPriceUsd
           : resolveBuyAnchorPriceUsd(trades, ticker, holdingAnchorDate, asOfDate) || currentPriceUsd;
       const growthMultiplier = anchorPriceUsd > 0 ? currentPriceUsd / anchorPriceUsd : 1;
-      const holdingElapsedMonths = Math.max(1, monthsElapsedInclusive(holdingAnchorDate, asOfDate));
+      const currentValueUsd = roundMoney(decimal(shares).mul(currentPriceUsd));
+      const rollingReturn = rollingActiveDailyReturn(dailyPrices, ticker, asOfDate);
       const projectedGrowthPercent = roundPercent(
-        (growthMultiplier - 1) * (projectionRemainingMonths / holdingElapsedMonths) * 100,
+        rollingReturn.averageDailyReturn * remainingTradingDays * 100,
         2,
       );
-      // A short observation window can extrapolate a temporary loss past -100%.
-      // Keep the holding's forward value anchored to its live value in that case;
-      // a real holding should not disappear from the mix or comparison.
-      const projectedMultiplier = Math.max(1, 1 + projectedGrowthPercent / 100);
-      const currentValueUsd = roundMoney(decimal(shares).mul(currentPriceUsd));
+      // The three-day return is deliberately responsive, but a loss cannot
+      // project a holding below zero.
+      const projectedMultiplier = Math.max(0, 1 + projectedGrowthPercent / 100);
       const projectedValueUsd = roundMoney(decimal(currentValueUsd).mul(projectedMultiplier));
 
       return {
@@ -221,6 +221,9 @@ function buildHoldingComparisons({
         anchorPriceUsd: roundMoney(anchorPriceUsd),
         anchorDate: holdingAnchorDate,
         growthMultiplier: roundPercent(growthMultiplier, 4),
+        rollingDailyReturnPercent: roundPercent(rollingReturn.averageDailyReturn * 100, 4),
+        activeTradingDaysUsed: rollingReturn.returnCount,
+        remainingTradingDays,
         projectedGrowthPercent,
         currentValueUsd,
         projectedValueUsd,
@@ -228,6 +231,23 @@ function buildHoldingComparisons({
     })
     .filter(isPresent)
     .sort((left, right) => right.projectedValueUsd - left.projectedValueUsd);
+}
+
+function rollingActiveDailyReturn(dailyPrices: CachedDailyPrice[], ticker: string, asOfDate: string) {
+  const prices = dailyPrices
+    .filter((price) => price.symbol.toUpperCase() === ticker.toUpperCase() && price.date <= asOfDate)
+    .sort((left, right) => left.date.localeCompare(right.date));
+  const activeCloses: number[] = [];
+  for (const price of prices) {
+    const close = price.adjustedCloseUsd ?? price.closeUsd;
+    if (!Number.isFinite(close) || close <= 0) continue;
+    if (activeCloses.length === 0 || close !== activeCloses.at(-1)) activeCloses.push(close);
+  }
+  const returns = activeCloses.slice(1).map((close, index) => close / activeCloses[index] - 1).slice(-3);
+  return {
+    returnCount: returns.length,
+    averageDailyReturn: returns.length > 0 ? returns.reduce((total, value) => total + value, 0) / returns.length : 0,
+  };
 }
 
 function resolvePriceUsd(

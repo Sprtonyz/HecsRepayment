@@ -1023,13 +1023,15 @@ export function DashboardOverview({
                     Portfolio scenario check
                   </p>
                   <h2 className="text-2xl font-semibold tracking-tight sm:text-[2rem]">
-                    Live AAPL benchmark versus the portfolio mix.
+                    Live AAPL benchmark versus the projected portfolio mix.
                   </h2>
                   <p className="max-w-3xl text-sm leading-6 text-slate-300 sm:text-base">
                     The benchmark starts with {formatShares(portfolioScenarioComparison.benchmarkShares)}{" "}
                     {portfolioScenarioComparison.benchmarkTicker} shares. Its snapshot is the first
                     market close on or after {settings.planStartDate}; the live target is those same
-                    shares at today&apos;s AAPL price. It does not extrapolate a recent move to month 53.
+                    shares at today&apos;s AAPL price. The portfolio target uses only recorded ledger
+                    holdings and each ticker&apos;s rolling three active trading-day return for the
+                    remaining {portfolioScenarioComparison.remainingTradingDays} market days.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -1067,14 +1069,14 @@ export function DashboardOverview({
                   note={`${Math.abs(portfolioScenarioComparison.benchmarkGrowthPercent).toFixed(2)}% ${portfolioScenarioComparison.benchmarkGrowthPercent >= 0 ? "above" : "below"} the snapshot value.`}
                 />
                 <ScenarioMetric
-                  label="Portfolio mix now"
-                  value={formatScenarioMoney(portfolioScenarioComparison.portfolioCurrentValueUsd)}
-                  note="Current market value of held positions; compared like-for-like with the live benchmark."
+                  label="Portfolio mix target"
+                  value={formatScenarioMoney(portfolioScenarioComparison.portfolioProjectedValueUsd)}
+                  note={`Ledger holdings only. Three-day active-price average across ${portfolioScenarioComparison.remainingTradingDays} remaining market days.`}
                 />
                 <ScenarioMetric
                   label="Difference"
                   value={formatScenarioMoney(Math.abs(portfolioScenarioComparison.projectedDifferenceUsd))}
-                  note={`${portfolioScenarioComparison.projectedDifferencePercent >= 0 ? "+" : ""}${portfolioScenarioComparison.projectedDifferencePercent.toFixed(2)}% vs the benchmark.`}
+                  note={`${portfolioScenarioComparison.projectedDifferencePercent >= 0 ? "+" : ""}${portfolioScenarioComparison.projectedDifferencePercent.toFixed(2)}%: projected portfolio target versus live benchmark target.`}
                   tone={differenceTone}
                 />
               </div>
@@ -1089,20 +1091,19 @@ export function DashboardOverview({
                           : "The combined portfolio is tracking the AAPL benchmark."}
                     </p>
                     <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">
-                      19 May anchor
+                      Three-day return model
                     </Badge>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-300">
-                    The growth rate is measured from 19 May to today, then applied linearly to the
-                    53-month due date. The mix target uses the full planned contribution stream,
-                    then distributes it across the current tickers and applies the same linear
-                    growth logic so the estimate stays closer to the portfolio you are actually
-                    building.
+                    Only recorded purchases are included. For each holding, unchanged price rows
+                    are ignored, the latest three active daily percentage moves are averaged, and
+                    that rate is applied linearly across the remaining market days. A future buy
+                    enters the model only once it appears in your ledger.
                   </p>
                   <div className="mt-4 flex flex-wrap gap-2">
                     {portfolioScenarioComparison.holdings.slice(0, 4).map((holding) => (
                       <Badge key={holding.ticker} variant="outline">
-                        {holding.ticker} {holding.growthMultiplier.toFixed(2)}x since {holding.anchorDate}
+                        {holding.ticker} {holding.rollingDailyReturnPercent >= 0 ? "+" : ""}{holding.rollingDailyReturnPercent.toFixed(2)}% / active day
                       </Badge>
                     ))}
                   </div>
@@ -1119,7 +1120,7 @@ export function DashboardOverview({
                           <p className="text-sm text-slate-300">{formatScenarioMoney(holding.projectedValueUsd)}</p>
                         </div>
                         <p className="mt-1 text-xs text-slate-400">
-                          {formatShares(holding.shares)} shares now, {holding.growthMultiplier.toFixed(2)}x since {holding.anchorDate}.
+                          {formatShares(holding.shares)} shares, based on {holding.activeTradingDaysUsed} active price move{holding.activeTradingDaysUsed === 1 ? "" : "s"}.
                         </p>
                         <p className="mt-1 text-xs text-slate-400">
                           Current price: {formatScenarioMoney(holding.currentPriceUsd, 2)}.
