@@ -38,12 +38,14 @@ export type PortfolioScenarioComparison = {
   benchmarkAnchorPriceUsd: number;
   benchmarkGrowthMultiplier: number;
   benchmarkGrowthPercent: number;
+  benchmarkSnapshotValueUsd: number;
   benchmarkProjectedGrowthPercent: number;
   benchmarkCurrentValueUsd: number;
   benchmarkProjectedValueUsd: number;
   portfolioContributionTotalAud: number;
   portfolioContributionTotalUsd: number;
   portfolioGrowthMultiplier: number;
+  portfolioCurrentValueUsd: number;
   portfolioProjectedValueUsd: number;
   projectedDifferenceUsd: number;
   projectedDifferencePercent: number;
@@ -71,7 +73,7 @@ export function calculatePortfolioScenarioComparison(
     asOfDate,
     input.benchmarkCurrentPriceUsd,
   );
-  const benchmarkAnchorPriceUsd = resolvePriceUsd(
+  const benchmarkAnchorPriceUsd = resolveBenchmarkSnapshotPrice(
     input.dailyPrices,
     benchmarkTicker,
     anchorDate,
@@ -81,13 +83,13 @@ export function calculatePortfolioScenarioComparison(
     benchmarkAnchorPriceUsd > 0 ? benchmarkCurrentPriceUsd / benchmarkAnchorPriceUsd : 1;
   const benchmarkElapsedMonths = Math.max(1, monthsElapsedInclusive(anchorDate, asOfDate));
   const projectionRemainingMonths = Math.max(0, projectionMonths - benchmarkElapsedMonths);
-  const benchmarkProjectedGrowthPercent =
-    roundPercent((benchmarkGrowthMultiplier - 1) * (projectionRemainingMonths / benchmarkElapsedMonths) * 100, 2);
-  const benchmarkProjectionMultiplier = Math.max(0, 1 + benchmarkProjectedGrowthPercent / 100);
+  // This is a live benchmark, not a forward price forecast. Its target is the
+  // original share count at today's AAPL price; the percentage is strictly the
+  // change from the fixed snapshot price.
+  const benchmarkProjectedGrowthPercent = roundPercent((benchmarkGrowthMultiplier - 1) * 100, 2);
   const benchmarkCurrentValueUsd = roundMoney(decimal(benchmarkShares).mul(benchmarkCurrentPriceUsd));
-  const benchmarkProjectedValueUsd = roundMoney(
-    decimal(benchmarkCurrentValueUsd).mul(benchmarkProjectionMultiplier),
-  );
+  const benchmarkSnapshotValueUsd = roundMoney(decimal(benchmarkShares).mul(benchmarkAnchorPriceUsd));
+  const benchmarkProjectedValueUsd = benchmarkCurrentValueUsd;
 
   const holdings = buildHoldingComparisons({
     trades: input.trades,
@@ -107,7 +109,7 @@ export function calculatePortfolioScenarioComparison(
   const portfolioGrowthMultiplier =
     holdingsCurrentValueUsd > 0
       ? roundPercent(decimal(holdingsProjectedValueUsd).div(holdingsCurrentValueUsd), 4)
-      : benchmarkProjectionMultiplier;
+      : 1;
   const portfolioContributionTotalAud = roundMoney(
     decimal(Math.max(0, input.portfolioContributionAud ?? 0)).mul(projectionMonths),
   );
@@ -119,9 +121,7 @@ export function calculatePortfolioScenarioComparison(
       ? roundMoney(decimal(portfolioContributionTotalUsd).mul(portfolioGrowthMultiplier))
       : holdingsProjectedValueUsd;
 
-  const projectedDifferenceUsd = roundMoney(
-    decimal(portfolioProjectedValueUsd).minus(benchmarkProjectedValueUsd),
-  );
+  const projectedDifferenceUsd = roundMoney(decimal(holdingsCurrentValueUsd).minus(benchmarkCurrentValueUsd));
   const projectedDifferencePercent =
     benchmarkProjectedValueUsd > 0
       ? roundPercent(
@@ -145,11 +145,13 @@ export function calculatePortfolioScenarioComparison(
     benchmarkGrowthMultiplier: roundPercent(benchmarkGrowthMultiplier, 4),
     benchmarkGrowthPercent: roundPercent((benchmarkGrowthMultiplier - 1) * 100, 2),
     benchmarkProjectedGrowthPercent,
+    benchmarkSnapshotValueUsd,
     benchmarkCurrentValueUsd,
     benchmarkProjectedValueUsd,
     portfolioContributionTotalAud,
     portfolioContributionTotalUsd,
     portfolioGrowthMultiplier,
+    portfolioCurrentValueUsd: holdingsCurrentValueUsd,
     portfolioProjectedValueUsd,
     projectedDifferenceUsd,
     projectedDifferencePercent,
@@ -239,6 +241,31 @@ function resolvePriceUsd(
     .filter((price) => price.symbol.toUpperCase() === normalizedTicker && price.date <= date)
     .sort((left, right) => right.date.localeCompare(left.date))[0];
   return roundMoney(candidate?.adjustedCloseUsd ?? candidate?.closeUsd ?? fallbackPriceUsd ?? 0);
+}
+
+function resolveBenchmarkSnapshotPrice(
+  dailyPrices: CachedDailyPrice[],
+  ticker: string,
+  snapshotDate: string,
+  fallbackPriceUsd?: number,
+) {
+  const normalizedTicker = ticker.toUpperCase();
+  const prices = dailyPrices
+    .filter((price) => price.symbol.toUpperCase() === normalizedTicker)
+    .sort((left, right) => left.date.localeCompare(right.date));
+  // A plan can begin on a weekend or market holiday. Use the first actual close
+  // after it, otherwise retain the nearest earlier close rather than inventing
+  // a price from a later live quote.
+  const firstOnOrAfter = prices.find((price) => price.date >= snapshotDate);
+  const lastBefore = [...prices].reverse().find((price) => price.date < snapshotDate);
+  return roundMoney(
+    firstOnOrAfter?.adjustedCloseUsd ??
+      firstOnOrAfter?.closeUsd ??
+      lastBefore?.adjustedCloseUsd ??
+      lastBefore?.closeUsd ??
+      fallbackPriceUsd ??
+      0,
+  );
 }
 
 function resolveQuoteUsd(quotes: CachedQuote[], ticker: string) {

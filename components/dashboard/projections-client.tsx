@@ -342,7 +342,7 @@ export function ProjectionsClient({
     splits: settings.includeSplits ? snapshot.splits : [],
     benchmarkCurrentPriceUsd: currentPriceUsd,
     asOfDate: todayIso(),
-    anchorDate: `${todayIso().slice(0, 4)}-05-19`,
+    anchorDate: settings.planStartDate,
     projectionMonths,
     portfolioContributionAud: customContributionAud,
     audUsdRate,
@@ -762,8 +762,8 @@ export function ProjectionsClient({
             <div>
               <CardTitle>Portfolio Scenario Check</CardTitle>
               <p className="mt-1 text-sm text-muted-foreground">
-                Compares the {scenarioComparison.benchmarkTicker} benchmark against the current portfolio mix using
-                each holding&apos;s own growth anchor, so later buys keep their real purchase window.
+                Compares the live {scenarioComparison.benchmarkTicker} benchmark against the current portfolio mix.
+                The benchmark uses a fixed snapshot share count and today&apos;s price, with no forward price extrapolation.
               </p>
             </div>
             <Badge
@@ -781,19 +781,19 @@ export function ProjectionsClient({
           <CardContent>
             <div className="grid gap-3 md:grid-cols-4">
               <ScenarioStat
-                label="AAPL benchmark now"
-                value={formatCurrency(scenarioComparison.benchmarkCurrentValueUsd, "USD")}
-                note={`${formatShares(scenarioComparison.benchmarkShares)} ${scenarioComparison.benchmarkTicker} shares at ${formatCurrency(scenarioComparison.benchmarkCurrentPriceUsd, "USD")}.`}
+                label="AAPL snapshot value"
+                value={formatCurrency(scenarioComparison.benchmarkSnapshotValueUsd, "USD")}
+                note={`${formatShares(scenarioComparison.benchmarkShares)} shares at ${formatCurrency(scenarioComparison.benchmarkAnchorPriceUsd, "USD")} on the plan snapshot.`}
               />
               <ScenarioStat
                 label="AAPL benchmark target"
                 value={formatCurrency(scenarioComparison.benchmarkProjectedValueUsd, "USD")}
-                note={`${scenarioComparison.benchmarkGrowthPercent.toFixed(1)}% growth since 19 May.`}
+                note={`${scenarioComparison.benchmarkGrowthPercent.toFixed(1)}% change since the snapshot.`}
               />
               <ScenarioStat
-                label="Portfolio mix target"
-                value={formatCurrency(scenarioComparison.portfolioProjectedValueUsd, "USD")}
-                note={`${scenarioComparison.holdings.length} held ticker${scenarioComparison.holdings.length === 1 ? "" : "s"} projected separately with ticker-specific anchors.`}
+                label="Portfolio mix now"
+                value={formatCurrency(scenarioComparison.portfolioCurrentValueUsd, "USD")}
+                note={`${scenarioComparison.holdings.length} held ticker${scenarioComparison.holdings.length === 1 ? "" : "s"} valued at current market prices.`}
               />
               <ScenarioStat
                 label="Contribution projection"

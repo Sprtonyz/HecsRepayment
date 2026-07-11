@@ -196,7 +196,7 @@ export function DashboardOverview({
         splits: settings.includeSplits ? snapshot.splits : [],
         benchmarkCurrentPriceUsd: currentPriceUsd,
         asOfDate,
-        anchorDate: `${asOfDate.slice(0, 4)}-05-19`,
+        anchorDate: settings.planStartDate,
         projectionMonths: 53,
         portfolioContributionAud: settings.planMonthlyContributionAud,
         audUsdRate: latestAudToUsdRate,
@@ -1023,14 +1023,13 @@ export function DashboardOverview({
                     Portfolio scenario check
                   </p>
                   <h2 className="text-2xl font-semibold tracking-tight sm:text-[2rem]">
-                    53-month growth projection versus the live portfolio mix.
+                    Live AAPL benchmark versus the portfolio mix.
                   </h2>
                   <p className="max-w-3xl text-sm leading-6 text-slate-300 sm:text-base">
                     The benchmark starts with {formatShares(portfolioScenarioComparison.benchmarkShares)}{" "}
-                    {portfolioScenarioComparison.benchmarkTicker} shares. It uses the price change
-                    from 19 May to today as the current growth rate, then projects both the
-                    benchmark and the current mix forward to the 53-month due date before comparing
-                    the end values.
+                    {portfolioScenarioComparison.benchmarkTicker} shares. Its snapshot is the first
+                    market close on or after {settings.planStartDate}; the live target is those same
+                    shares at today&apos;s AAPL price. It does not extrapolate a recent move to month 53.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -1047,10 +1046,10 @@ export function DashboardOverview({
                     {portfolioScenarioComparison.status}
                   </Badge>
                   <Badge className="border-white/10 bg-white/10 text-white" variant="outline">
-                    {portfolioScenarioComparison.benchmarkGrowthPercent.toFixed(1)}% since 19 May
+                    {portfolioScenarioComparison.benchmarkGrowthPercent.toFixed(1)}% since snapshot
                   </Badge>
                   <Badge className="border-white/10 bg-white/10 text-white" variant="outline">
-                    {portfolioScenarioComparison.projectionMonths}-month projection
+                    Live benchmark
                   </Badge>
                 </div>
               </div>
@@ -1058,19 +1057,19 @@ export function DashboardOverview({
             <CardContent className="space-y-4 p-5 sm:p-6">
               <div className="grid gap-3 md:grid-cols-4">
                 <ScenarioMetric
-                  label="AAPL benchmark now"
-                  value={formatScenarioMoney(portfolioScenarioComparison.benchmarkCurrentValueUsd)}
-                  note={`${formatShares(portfolioScenarioComparison.benchmarkShares)} shares at ${formatScenarioMoney(portfolioScenarioComparison.benchmarkCurrentPriceUsd, 2)}.`}
+                  label="AAPL snapshot value"
+                  value={formatScenarioMoney(portfolioScenarioComparison.benchmarkSnapshotValueUsd)}
+                  note={`${formatShares(portfolioScenarioComparison.benchmarkShares)} shares at ${formatScenarioMoney(portfolioScenarioComparison.benchmarkAnchorPriceUsd, 2)} on the snapshot date.`}
                 />
                 <ScenarioMetric
                   label="AAPL benchmark target"
                   value={formatScenarioMoney(portfolioScenarioComparison.benchmarkProjectedValueUsd)}
-                  note={`Linear projection to month ${portfolioScenarioComparison.projectionMonths}: ${Math.abs(portfolioScenarioComparison.benchmarkProjectedGrowthPercent).toFixed(2)}% ${portfolioScenarioComparison.benchmarkProjectedGrowthPercent >= 0 ? "above" : "below"} the current value.`}
+                  note={`${Math.abs(portfolioScenarioComparison.benchmarkGrowthPercent).toFixed(2)}% ${portfolioScenarioComparison.benchmarkGrowthPercent >= 0 ? "above" : "below"} the snapshot value.`}
                 />
                 <ScenarioMetric
-                  label="Portfolio mix target"
-                  value={formatScenarioMoney(portfolioScenarioComparison.portfolioProjectedValueUsd)}
-                  note={`Linear mix lift to month ${portfolioScenarioComparison.projectionMonths}: ${((portfolioScenarioComparison.portfolioGrowthMultiplier - 1) * 100).toFixed(2)}%.`}
+                  label="Portfolio mix now"
+                  value={formatScenarioMoney(portfolioScenarioComparison.portfolioCurrentValueUsd)}
+                  note="Current market value of held positions; compared like-for-like with the live benchmark."
                 />
                 <ScenarioMetric
                   label="Difference"

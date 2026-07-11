@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { calculatePortfolioScenarioComparison } from "@/lib/domain/portfolioScenario";
 
 describe("portfolio scenario comparison", () => {
-  it("projects the benchmark and each holding from its own anchor window", () => {
+  it("uses the fixed benchmark snapshot and live price without extrapolating AAPL", () => {
     const result = calculatePortfolioScenarioComparison({
       benchmarkTicker: "AAPL",
-      benchmarkShares: 10,
+      benchmarkShares: 2,
       trades: [
         {
           id: "trade-aapl",
@@ -41,21 +41,24 @@ describe("portfolio scenario comparison", () => {
         },
       ],
       dailyPrices: [
-        { symbol: "AAPL", date: "2026-05-19", closeUsd: 10, provider: "manual" },
-        { symbol: "AAPL", date: "2026-06-20", closeUsd: 100, provider: "manual" },
+        { symbol: "AAPL", date: "2026-05-01", closeUsd: 10, provider: "manual" },
+        { symbol: "AAPL", date: "2026-06-20", closeUsd: 12, provider: "manual" },
         { symbol: "SPCX", date: "2026-06-20", closeUsd: 181.69, provider: "manual" },
       ],
       splits: [],
       asOfDate: "2026-06-20",
-      anchorDate: "2026-05-19",
+      anchorDate: "2026-05-01",
       projectionMonths: 53,
       portfolioContributionAud: 600,
       audUsdRate: 0.67,
       benchmarkTolerancePercent: 0,
     });
 
-    expect(result.benchmarkCurrentValueUsd).toBe(1000);
-    expect(result.benchmarkProjectedValueUsd).toBeGreaterThan(result.benchmarkCurrentValueUsd);
+    expect(result.benchmarkSnapshotValueUsd).toBe(20);
+    expect(result.benchmarkCurrentValueUsd).toBe(24);
+    expect(result.benchmarkProjectedValueUsd).toBe(24);
+    expect(result.benchmarkGrowthPercent).toBe(20);
+    expect(result.benchmarkProjectedGrowthPercent).toBe(20);
     expect(result.portfolioContributionTotalAud).toBe(31800);
     expect(result.portfolioContributionTotalUsd).toBeCloseTo(31800 * 0.67, 2);
     expect(result.portfolioProjectedValueUsd).toBeGreaterThan(result.portfolioContributionTotalUsd);
@@ -67,6 +70,27 @@ describe("portfolio scenario comparison", () => {
     expect(spcx?.anchorPriceUsd).toBe(171.99);
     expect(spcx?.growthMultiplier).toBeGreaterThan(1);
     expect(spcx?.projectedValueUsd).toBeGreaterThan(spcx?.currentValueUsd ?? 0);
+  });
+
+  it("uses the first market close after a weekend or holiday snapshot date", () => {
+    const result = calculatePortfolioScenarioComparison({
+      benchmarkTicker: "AAPL",
+      benchmarkShares: 2,
+      trades: [],
+      dailyPrices: [
+        { symbol: "AAPL", date: "2026-05-01", closeUsd: 10, provider: "manual" },
+        { symbol: "AAPL", date: "2026-06-01", closeUsd: 12, provider: "manual" },
+      ],
+      quotes: [],
+      splits: [],
+      asOfDate: "2026-06-01",
+      anchorDate: "2026-04-30",
+      projectionMonths: 53,
+      benchmarkTolerancePercent: 0,
+    });
+
+    expect(result.benchmarkAnchorPriceUsd).toBe(10);
+    expect(result.benchmarkGrowthPercent).toBe(20);
   });
 
   it("uses the first buy price as the anchor when a holding starts after May 19", () => {
