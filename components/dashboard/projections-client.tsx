@@ -763,7 +763,7 @@ export function ProjectionsClient({
               <CardTitle>Portfolio Scenario Check</CardTitle>
               <p className="mt-1 text-sm text-muted-foreground">
                 Compares the live {scenarioComparison.benchmarkTicker} benchmark against a ledger-only portfolio forecast.
-                Each holding uses its rolling three active trading-day return across the remaining market days; unrecorded deposits are excluded.
+                Each holding uses its rolling three active trading-day return, compounded across the remaining market days; unrecorded deposits are excluded.
               </p>
             </div>
             <Badge

@@ -87,9 +87,10 @@ describe("portfolio scenario comparison", () => {
     expect(spcx.activeTradingDaysUsed).toBe(2);
     expect(spcx.rollingDailyReturnPercent).toBe(75);
     expect(spcx.remainingTradingDays).toBe(42);
-    expect(spcx.projectedValueUsd).toBe(390);
-    expect(result.portfolioProjectedValueUsd).toBe(390);
-    expect(result.projectedDifferenceUsd).toBe(380);
+    const expectedProjectedValue = Number((12 * Math.pow(1.75, 42)).toFixed(2));
+    expect(spcx.projectedValueUsd).toBe(expectedProjectedValue);
+    expect(result.portfolioProjectedValueUsd).toBe(expectedProjectedValue);
+    expect(result.projectedDifferenceUsd).toBe(expectedProjectedValue - 10);
   });
 
   it("uses the first market close after a weekend or holiday snapshot date", () => {

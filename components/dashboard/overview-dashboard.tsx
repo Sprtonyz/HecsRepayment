@@ -1071,7 +1071,7 @@ export function DashboardOverview({
                 <ScenarioMetric
                   label="Portfolio mix target"
                   value={formatScenarioMoney(portfolioScenarioComparison.portfolioProjectedValueUsd)}
-                  note={`Ledger holdings only. Three-day active-price average across ${portfolioScenarioComparison.remainingTradingDays} remaining market days.`}
+                  note={`Ledger holdings only. Three-day active-price average compounded across ${portfolioScenarioComparison.remainingTradingDays} remaining market days.`}
                 />
                 <ScenarioMetric
                   label="Difference"
@@ -1091,13 +1091,13 @@ export function DashboardOverview({
                           : "The combined portfolio is tracking the AAPL benchmark."}
                     </p>
                     <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">
-                      Three-day return model
+                      Compounded three-day return model
                     </Badge>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-300">
                     Only recorded purchases are included. For each holding, unchanged price rows
                     are ignored, the latest three active daily percentage moves are averaged, and
-                    that rate is applied linearly across the remaining market days. A future buy
+                    that rate is compounded across the remaining market days. A future buy
                     enters the model only once it appears in your ledger.
                   </p>
                   <div className="mt-4 flex flex-wrap gap-2">
@@ -1125,7 +1125,7 @@ export function DashboardOverview({
                         <p className="mt-1 text-xs text-slate-400">
                           Current price: {formatScenarioMoney(holding.currentPriceUsd, 2)}.
                         </p>
-                        <p className="mt-1 text-xs text-slate-400">
+                  <p className="mt-1 text-xs text-slate-400">
                           Projected value: {formatScenarioMoney(holding.projectedValueUsd)}.
                         </p>
                       </div>

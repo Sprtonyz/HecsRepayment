@@ -205,13 +205,11 @@ function buildHoldingComparisons({
       const growthMultiplier = anchorPriceUsd > 0 ? currentPriceUsd / anchorPriceUsd : 1;
       const currentValueUsd = roundMoney(decimal(shares).mul(currentPriceUsd));
       const rollingReturn = rollingActiveDailyReturn(dailyPrices, ticker, asOfDate);
-      const projectedGrowthPercent = roundPercent(
-        rollingReturn.averageDailyReturn * remainingTradingDays * 100,
-        2,
+      const projectedMultiplier = Math.max(
+        0,
+        Math.pow(1 + rollingReturn.averageDailyReturn, remainingTradingDays),
       );
-      // The three-day return is deliberately responsive, but a loss cannot
-      // project a holding below zero.
-      const projectedMultiplier = Math.max(0, 1 + projectedGrowthPercent / 100);
+      const projectedGrowthPercent = roundPercent((projectedMultiplier - 1) * 100, 2);
       const projectedValueUsd = roundMoney(decimal(currentValueUsd).mul(projectedMultiplier));
 
       return {
