@@ -1117,13 +1117,16 @@ export function DashboardOverview({
                       <div key={holding.ticker} className="rounded-xl border border-white/10 bg-[#101a32] p-3">
                         <div className="flex items-center justify-between gap-3">
                           <p className="font-medium text-white">{holding.ticker}</p>
-                          <p className="text-sm text-slate-300">{formatScenarioMoney(holding.projectedValueUsd)}</p>
+                          <p className="text-sm text-slate-300">{formatScenarioMoney(holding.currentValueUsd)}</p>
                         </div>
                         <p className="mt-1 text-xs text-slate-400">
                           {formatShares(holding.shares)} shares, based on {holding.activeTradingDaysUsed} active price move{holding.activeTradingDaysUsed === 1 ? "" : "s"}.
                         </p>
                         <p className="mt-1 text-xs text-slate-400">
                           Current price: {formatScenarioMoney(holding.currentPriceUsd, 2)}.
+                        </p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          Projected value: {formatScenarioMoney(holding.projectedValueUsd)}.
                         </p>
                       </div>
                     ))}
