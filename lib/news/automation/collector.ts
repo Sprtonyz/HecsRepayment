@@ -2,6 +2,7 @@ import { fetchReadableArticleText } from "@/lib/news/articleText";
 import { scoreNewsText } from "@/lib/news/sentiment";
 import { contentHash, excerpt, normalizeUrl, stableId } from "@/lib/news/automation/normalization";
 import { getNewsSourcesForSymbol, getTickerNewsProfile } from "@/lib/news/automation/sourceRegistry";
+import { toPerceptionSignal } from "@/lib/news/automation/perception";
 import {
   assessStrongEvidence,
   groupNearDuplicates,
@@ -17,12 +18,13 @@ import type {
   NewsDiscoveryProvider,
   NewsSourceDefinition,
   RetrievedNewsCandidate,
+  PerceptionSignal,
   SourceAttempt,
   TickerCollectionOutcome,
 } from "@/lib/news/automation/types";
 
 const FEED_TIMEOUT_MS = 10_000;
-const MAX_RETRIEVALS_PER_TICKER = 10;
+const MAX_RETRIEVALS_PER_TICKER = 14;
 const USER_AGENT = "AAPL Catch-Up Tracker/1.0 permitted-news-collector";
 
 export async function collectDailyDeepContextNews({
@@ -36,6 +38,7 @@ export async function collectDailyDeepContextNews({
   const sourceAttempts: SourceAttempt[] = [];
   const selected: RetrievedNewsCandidate[] = [];
   const supporting: RetrievedNewsCandidate[] = [];
+  const perception: PerceptionSignal[] = [];
   const rejected = [];
 
   const outcomes = await mapWithConcurrency(symbols, 2, async (symbol) =>
@@ -48,6 +51,7 @@ export async function collectDailyDeepContextNews({
       selected.push(outcome.selected);
     }
     supporting.push(...outcome.supporting);
+    perception.push(...outcome.perception);
   }
 
   return {
@@ -56,6 +60,7 @@ export async function collectDailyDeepContextNews({
     targetCount: symbols.length,
     selected,
     supporting,
+    perception,
     sourceAttempts,
     rejected,
     tickerOutcomes,
@@ -146,6 +151,13 @@ async function collectTickerNews({
     .filter(isSupportingContext)
     .sort((left, right) => right.qualityScore - left.qualityScore || right.relevanceScore - left.relevanceScore)
     .slice(0, 2);
+  const perception = representatives
+    .filter((candidate) => candidate.id !== selected?.id)
+    .filter((candidate) => !supporting.some((item) => item.id === candidate.id))
+    .map(toPerceptionSignal)
+    .filter((candidate): candidate is PerceptionSignal => Boolean(candidate))
+    .sort((left, right) => right.perceptionScore - left.perceptionScore)
+    .slice(0, 2);
   const retrievalSuccesses = retrieved.filter((item) => item.retrievalStatus === "read").length;
   const retrievalFailures = retrieved.length - retrievalSuccesses;
   const allRejected = [...filtered.rejected, ...evidenceRejected];
@@ -154,6 +166,7 @@ async function collectTickerNews({
     symbol,
     selected,
     supporting,
+    perception,
     discoveredCount: discovered.length,
     rejected: allRejected,
     duplicatesRemoved: removed,

@@ -8,6 +8,8 @@ export type RetrievalStatus = "read" | "summaryOnly" | "unavailable" | "paywalle
 export type EvidenceSourceTier = "primary" | "reputable" | "specialist" | "general" | "aggregator";
 export type EvidenceMateriality = "high" | "medium" | "low";
 export type EvidenceType = "primaryDisclosure" | "reportedEvent" | "commentary";
+export type PerceptionKind = "reported" | "rumour" | "analystView";
+export type PerceptionResolution = "open" | "corroborated" | "confirmed" | "denied" | "unresolved";
 
 export type TickerNewsProfile = {
   symbol: string;
@@ -68,6 +70,7 @@ export type RetrievedNewsCandidate = DiscoveredNewsCandidate & {
   eventDate?: string;
   evidencePolicyVersion: "strong-evidence-v1";
   qualityFlags: string[];
+  independentSourceCount?: number;
   topic: string;
   duplicateGroupId?: string;
   signal: NewsSignal;
@@ -94,6 +97,7 @@ export type TickerCollectionOutcome = {
   symbol: string;
   selected?: RetrievedNewsCandidate;
   supporting: RetrievedNewsCandidate[];
+  perception: PerceptionSignal[];
   discoveredCount: number;
   rejected: RejectedNewsCandidate[];
   duplicatesRemoved: number;
@@ -108,10 +112,22 @@ export type DailyCollectionOutcome = {
   targetCount: number;
   selected: RetrievedNewsCandidate[];
   supporting: RetrievedNewsCandidate[];
+  perception: PerceptionSignal[];
   sourceAttempts: SourceAttempt[];
   rejected: RejectedNewsCandidate[];
   tickerOutcomes: TickerCollectionOutcome[];
   duplicateStoriesRemoved: number;
   fullTextRetrievalSuccesses: number;
   fullTextRetrievalFailures: number;
+};
+
+export type PerceptionSignal = RetrievedNewsCandidate & {
+  perceptionKind: PerceptionKind;
+  perceptionScore: number;
+  corroborationKey: string;
+  independentSourceCount: number;
+  sourceReliability: number;
+  catalystTags: string[];
+  resolutionStatus: PerceptionResolution;
+  expiresAt: string;
 };

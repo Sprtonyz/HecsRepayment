@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { stableId } from "@/lib/news/automation/normalization";
 import { STRONG_EVIDENCE_THRESHOLD } from "@/lib/news/automation/selection";
-import type { DailyCollectionOutcome, RetrievedNewsCandidate } from "@/lib/news/automation/types";
+import type { DailyCollectionOutcome, PerceptionSignal, RetrievedNewsCandidate } from "@/lib/news/automation/types";
 import type { CachedNewsArticle } from "@/lib/storage/types";
 import { getSharedNewsConfig, isSharedNewsSyncEnabled } from "@/lib/shared-news/config";
 
@@ -38,6 +38,27 @@ type StoredArticleRow = {
   raw_source: unknown;
 };
 
+type StoredPerceptionRow = StoredArticleRow & {
+  source_tier: string;
+  perception_kind: string;
+  perception_score: number;
+  corroboration_key: string;
+  independent_source_count: number;
+  source_reliability: number;
+  catalyst_tags: string[] | null;
+  resolution_status: string;
+  expires_at: string;
+  resolved_at: string | null;
+};
+
+export type PerceptionSourceCalibration = {
+  publisher: string;
+  sourceTier: string;
+  resolvedSignalCount: number;
+  reliability: number;
+  outcomes: Record<string, number>;
+};
+
 export async function claimAutomatedNewsCollection(
   outcome: Pick<DailyCollectionOutcome, "runKey" | "marketDate" | "targetCount">,
 ): Promise<CollectionClaim> {
@@ -65,6 +86,7 @@ export async function persistAutomatedNewsCollection(runId: string, outcome: Dai
   const supabase = automationClient();
   const articleRows = outcome.selected.map((article) => toArticleRow(runId, outcome.marketDate, article));
   const supportingRows = outcome.supporting.map((article) => toArticleRow(runId, outcome.marketDate, article, "supporting"));
+  const perceptionRows = outcome.perception.map((article) => toPerceptionRow(runId, outcome.marketDate, article));
   const sourceRows = outcome.sourceAttempts.map((attempt) => ({
     id: stableId("source-attempt", `${runId}:${attempt.sourceId}:${attempt.symbol}`),
     run_id: runId,
@@ -104,6 +126,9 @@ export async function persistAutomatedNewsCollection(runId: string, outcome: Dai
   }
 
   const writes = [
+    perceptionRows.length
+      ? supabase.from("news_perception_signals").upsert(perceptionRows, { onConflict: "symbol,market_date,canonical_url" })
+      : Promise.resolve({ error: null }),
     supportingRows.length
       ? supabase.from("news_supporting_contexts").upsert(supportingRows, { onConflict: "symbol,market_date,canonical_url" })
       : Promise.resolve({ error: null }),
@@ -118,6 +143,7 @@ export async function persistAutomatedNewsCollection(runId: string, outcome: Dai
   if (failed?.error) {
     throw new Error(`Could not persist automated news collection: ${failed.error.message}`);
   }
+  const perceptionReconciliation = await reconcilePerceptionSignals(supabase, outcome);
 
   const metrics = {
     dailyArticleTarget: outcome.targetCount,
@@ -126,6 +152,9 @@ export async function persistAutomatedNewsCollection(runId: string, outcome: Dai
     strongEvidenceCollected: outcome.selected.length,
     strongEvidenceThreshold: STRONG_EVIDENCE_THRESHOLD,
     supportingContextCollected: outcome.supporting.length,
+    perceptionSignalsCollected: outcome.perception.length,
+    perceptionSignalsResolved: perceptionReconciliation.resolved,
+    perceptionSignalsExpiredUnresolved: perceptionReconciliation.unresolved,
     fullTextRetrievalSuccesses: outcome.fullTextRetrievalSuccesses,
     fullTextRetrievalFailures: outcome.fullTextRetrievalFailures,
     sourcesAttempted: outcome.sourceAttempts.length,
@@ -210,6 +239,44 @@ export async function getAutomatedSupportingNewsForMonth(symbol: string, reviewM
   return ((data ?? []) as StoredArticleRow[]).map(fromStoredArticleRow);
 }
 
+export async function getAutomatedPerceptionSignalsForMonth(symbol: string, reviewMonth: string) {
+  if (!isSharedNewsSyncEnabled()) return [];
+  const { from, nextMonth } = monthBounds(reviewMonth);
+  const { data, error } = await automationClient()
+    .from("news_perception_signals")
+    .select("*")
+    .eq("symbol", symbol.toUpperCase())
+    .gte("market_date", from)
+    .lt("market_date", nextMonth)
+    .order("perception_score", { ascending: false });
+  if (error) throw new Error(`Could not read ${symbol} monthly perception signals: ${error.message}`);
+  return ((data ?? []) as StoredPerceptionRow[]).map(fromStoredPerceptionRow);
+}
+
+export async function getPerceptionSourceCalibration(symbol: string): Promise<PerceptionSourceCalibration[]> {
+  if (!isSharedNewsSyncEnabled()) return [];
+  const from = new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10);
+  const { data, error } = await automationClient()
+    .from("news_perception_signals")
+    .select("publisher,source_tier,resolution_status")
+    .eq("symbol", symbol.toUpperCase())
+    .gte("market_date", from);
+  if (error) throw new Error(`Could not read ${symbol} perception calibration: ${error.message}`);
+  const grouped = new Map<string, { sourceTier: string; outcomes: Record<string, number> }>();
+  for (const row of (data ?? []) as Array<{ publisher: string; source_tier: string; resolution_status: string }>) {
+    const current = grouped.get(row.publisher) ?? { sourceTier: row.source_tier, outcomes: {} };
+    current.outcomes[row.resolution_status] = (current.outcomes[row.resolution_status] ?? 0) + 1;
+    grouped.set(row.publisher, current);
+  }
+  return [...grouped.entries()].map(([publisher, value]) => {
+    const resolved = Object.entries(value.outcomes).filter(([status]) => status !== "open");
+    const resolvedSignalCount = resolved.reduce((total, [, count]) => total + count, 0);
+    const measured = resolved.reduce((total, [status, count]) => total + calibrationOutcomeScore(status) * count, 0);
+    const reliability = (baselineReliability(value.sourceTier) * 5 + measured) / (5 + resolvedSignalCount);
+    return { publisher, sourceTier: value.sourceTier, resolvedSignalCount, reliability: round(reliability), outcomes: value.outcomes };
+  }).sort((left, right) => right.resolvedSignalCount - left.resolvedSignalCount || right.reliability - left.reliability);
+}
+
 export async function getAutomatedMonthlyCoverage(reviewMonth: string) {
   if (!isSharedNewsSyncEnabled()) {
     return { daysWithShortfall: 0, runCount: 0, strongEvidenceCollected: 0, strongEvidenceTarget: 0, supportingContextCount: 0 };
@@ -228,13 +295,21 @@ export async function getAutomatedMonthlyCoverage(reviewMonth: string) {
     .select("id", { count: "exact", head: true })
     .gte("market_date", from)
     .lt("market_date", nextMonth);
-  if (supporting.error) throw new Error(`Could not read monthly supporting coverage: ${supporting.error.message}`);
+  const perceptions = await automationClient()
+    .from("news_perception_signals")
+    .select("id", { count: "exact", head: true })
+    .gte("market_date", from)
+    .lt("market_date", nextMonth);
+  if (supporting.error || perceptions.error) {
+    throw new Error(`Could not read monthly context coverage: ${supporting.error?.message ?? perceptions.error?.message}`);
+  }
   return {
     daysWithShortfall: runs.filter((run) => run.selected_count < run.target_count).length,
     runCount: runs.length,
     strongEvidenceCollected: runs.reduce((total, run) => total + run.selected_count, 0),
     strongEvidenceTarget: runs.reduce((total, run) => total + run.target_count, 0),
     supportingContextCount: supporting.count ?? 0,
+    perceptionSignalCount: perceptions.count ?? 0,
   };
 }
 
@@ -348,6 +423,35 @@ function toArticleRow(
   };
 }
 
+function toPerceptionRow(runId: string, marketDate: string, article: PerceptionSignal) {
+  const base = toArticleRow(runId, marketDate, article, "supporting");
+  return {
+    ...base,
+    id: stableId("perception-signal", `${article.symbol}:${marketDate}:${article.canonicalUrl}`),
+    source_tier: article.sourceTier,
+    perception_kind: article.perceptionKind,
+    perception_score: article.perceptionScore,
+    corroboration_key: article.corroborationKey,
+    independent_source_count: article.independentSourceCount,
+    source_reliability: article.sourceReliability,
+    catalyst_tags: article.catalystTags,
+    resolution_status: article.resolutionStatus,
+    expires_at: article.expiresAt,
+    resolved_at: null,
+    raw_source: {
+      ...base.raw_source,
+      perceptionKind: article.perceptionKind,
+      perceptionScore: article.perceptionScore,
+      corroborationKey: article.corroborationKey,
+      independentSourceCount: article.independentSourceCount,
+      sourceReliability: article.sourceReliability,
+      catalystTags: article.catalystTags,
+      resolutionStatus: article.resolutionStatus,
+      expiresAt: article.expiresAt,
+    },
+  };
+}
+
 function monthBounds(reviewMonth: string) {
   const from = `${reviewMonth}-01`;
   const [year, month] = reviewMonth.split("-").map(Number);
@@ -385,6 +489,86 @@ function fromStoredArticleRow(row: StoredArticleRow): CachedNewsArticle {
       qualityScore: row.quality_score,
     },
   };
+}
+
+function fromStoredPerceptionRow(row: StoredPerceptionRow): CachedNewsArticle {
+  const article = fromStoredArticleRow(row);
+  return {
+    ...article,
+    raw: {
+      ...(isRecord(article.raw) ? article.raw : {}),
+      sourceTier: row.source_tier,
+      perceptionKind: row.perception_kind,
+      perceptionScore: row.perception_score,
+      corroborationKey: row.corroboration_key,
+      independentSourceCount: row.independent_source_count,
+      sourceReliability: row.source_reliability,
+      catalystTags: row.catalyst_tags ?? [],
+      resolutionStatus: row.resolution_status,
+      expiresAt: row.expires_at,
+      resolvedAt: row.resolved_at,
+    },
+  };
+}
+
+async function reconcilePerceptionSignals(
+  supabase: ReturnType<typeof automationClient>,
+  outcome: DailyCollectionOutcome,
+) {
+  const now = new Date().toISOString();
+  const expired = await supabase
+    .from("news_perception_signals")
+    .update({ resolution_status: "unresolved", resolved_at: now, updated_at: now })
+    .eq("resolution_status", "open")
+    .lt("expires_at", now)
+    .select("id");
+  if (expired.error) throw new Error(`Could not expire perception signals: ${expired.error.message}`);
+
+  const primaryEvidence = outcome.selected.filter((article) => article.sourceTier === "primary");
+  if (primaryEvidence.length === 0) return { resolved: 0, unresolved: expired.data?.length ?? 0 };
+  const { data: openSignals, error } = await supabase
+    .from("news_perception_signals")
+    .select("id,symbol,topic,title,market_date")
+    .eq("resolution_status", "open")
+    .gte("market_date", new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10));
+  if (error) throw new Error(`Could not reconcile perception signals: ${error.message}`);
+
+  let resolved = 0;
+  for (const signal of (openSignals ?? []) as Array<{ id: string; symbol: string; topic: string; title: string; market_date: string }>) {
+    const evidence = primaryEvidence.find((article) =>
+      article.symbol === signal.symbol && article.topic === signal.topic && sharedMeaningfulTerms(article.title, signal.title) >= 2,
+    );
+    if (!evidence) continue;
+    const status = /\b(den(?:y|ies|ied)|no plans?|not considering|incorrect report)\b/i.test(`${evidence.title}\n${evidence.cleanText ?? ""}`)
+      ? "denied"
+      : "corroborated";
+    const update = await supabase
+      .from("news_perception_signals")
+      .update({ resolution_status: status, resolved_at: now, updated_at: now })
+      .eq("id", signal.id)
+      .eq("resolution_status", "open");
+    if (update.error) throw new Error(`Could not update perception resolution: ${update.error.message}`);
+    resolved += 1;
+  }
+  return { resolved, unresolved: expired.data?.length ?? 0 };
+}
+
+function sharedMeaningfulTerms(left: string, right: string) {
+  const tokens = (value: string) => new Set(value.toLowerCase().match(/[a-z0-9]{5,}/g) ?? []);
+  const leftTerms = tokens(left);
+  return [...tokens(right)].filter((term) => leftTerms.has(term)).length;
+}
+
+function calibrationOutcomeScore(status: string) {
+  return status === "confirmed" ? 1 : status === "corroborated" ? 0.75 : status === "unresolved" ? 0.35 : status === "denied" ? 0 : 0.5;
+}
+
+function baselineReliability(sourceTier: string) {
+  return sourceTier === "reputable" ? 0.8 : sourceTier === "specialist" ? 0.68 : sourceTier === "general" ? 0.55 : 0.35;
+}
+
+function round(value: number) {
+  return Math.round(value * 100) / 100;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

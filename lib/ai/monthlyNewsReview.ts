@@ -1,6 +1,7 @@
 import { buildNewsDigest } from "@/lib/news/sentiment";
 import { codexReviewSchema } from "@/lib/news/codexReviewSchemas";
 import type { CachedNewsArticle } from "@/lib/storage/types";
+import type { PerceptionSourceCalibration } from "@/lib/shared-news/automationStore";
 
 export const DEFAULT_MONTHLY_NEWS_MODEL = "gpt-5.5";
 
@@ -9,6 +10,8 @@ export async function generateAutomatedMonthlyNewsReview({
   reviewMonth,
   articles,
   supportingArticles = [],
+  perceptionSignals = [],
+  perceptionSourceCalibration = [],
   coverageStatus,
   shortfallDayCount,
 }: {
@@ -16,12 +19,14 @@ export async function generateAutomatedMonthlyNewsReview({
   reviewMonth: string;
   articles: CachedNewsArticle[];
   supportingArticles?: CachedNewsArticle[];
+  perceptionSignals?: CachedNewsArticle[];
+  perceptionSourceCalibration?: PerceptionSourceCalibration[];
   coverageStatus: "complete" | "limited";
   shortfallDayCount: number;
 }) {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) throw new Error("OPENAI_API_KEY is required for automatic monthly news publication.");
-  if (articles.length === 0 && supportingArticles.length === 0) {
+  if (articles.length === 0 && supportingArticles.length === 0 && perceptionSignals.length === 0) {
     throw new Error(`No persisted ${symbol} evidence is available for ${reviewMonth}.`);
   }
 
@@ -29,8 +34,9 @@ export async function generateAutomatedMonthlyNewsReview({
   const allEvidence = [
     ...articles.map((article) => ({ article, evidenceClass: "strong" as const })),
     ...supportingArticles.map((article) => ({ article, evidenceClass: "supporting" as const })),
+    ...perceptionSignals.map((article) => ({ article, evidenceClass: "perception" as const })),
   ];
-  const deterministicDigest = buildNewsDigest(symbol, allEvidence.map((item) => item.article), `${reviewMonth}-28T23:59:59.000Z`);
+  const deterministicDigest = buildNewsDigest(symbol, [...articles, ...supportingArticles], `${reviewMonth}-28T23:59:59.000Z`);
   const evidence = allEvidence.map(({ article, evidenceClass }) => ({
     evidenceClass,
     title: article.title,
@@ -49,6 +55,14 @@ export async function generateAutomatedMonthlyNewsReview({
     eventDate: rawString(article.raw, "eventDate") || article.publishedAt,
     evidencePolicyVersion: rawString(article.raw, "evidencePolicyVersion") || "legacy-unscored",
     qualityFlags: rawStringArray(article.raw, "qualityFlags"),
+    perceptionKind: rawString(article.raw, "perceptionKind"),
+    perceptionScore: rawNumber(article.raw, "perceptionScore"),
+    corroborationKey: rawString(article.raw, "corroborationKey"),
+    independentSourceCount: rawNumber(article.raw, "independentSourceCount"),
+    sourceReliability: rawNumber(article.raw, "sourceReliability"),
+    catalystTags: rawStringArray(article.raw, "catalystTags"),
+    resolutionStatus: rawString(article.raw, "resolutionStatus"),
+    expiresAt: rawString(article.raw, "expiresAt"),
     excerpt: (rawString(article.raw, "cleanedText") || article.summary || "").slice(0, 1800),
   }));
 
@@ -74,10 +88,13 @@ export async function generateAutomatedMonthlyNewsReview({
             shortfallDayCount,
             strongEvidenceCount: articles.length,
             supportingContextCount: supportingArticles.length,
+            perceptionSignalCount: perceptionSignals.length,
+            perceptionSourceCalibration,
             mandatoryDigest: deterministicDigest,
             outputRequirements: {
               appliedNewsDigest: "Preserve the mandatory digest counts and analysisMode codexReview; choose only signal, confidence, score and concise headlines consistently with the evidence.",
               longTermThesisSignals: "Array of mechanism-focused, durable signals; each item includes theme, direction, materiality and judgement. Only evidenceClass strong records may establish a conclusion. evidenceClass supporting items may corroborate a strong item or identify an unresolved theme, never independently establish a conclusion.",
+              marketPerception: "Object with marketNarratives and caveats. Use evidenceClass perception only here. Label every item reported, rumour or analystView; include its source reliability, corroboration count, catalyst tags and resolution status. It may explain expectations or near-term risk, but it is not factual evidence and cannot support a long-term thesis conclusion or guide adjustment by itself.",
               staleOrNoisyItems: "Array of excluded or downweighted items with a reason. Include duplicate, price-action, thin-summary, low-focus and low-quality caveats where relevant.",
               unresolvedThemes: "Array of specific questions that evidence cannot resolve.",
               suggestedGuideImpact: "Object with rationale, expectedAdjustmentPercent, depositSuggestion and newsSignal. This is decision support, not a price target.",
@@ -114,6 +131,14 @@ export async function generateAutomatedMonthlyNewsReview({
     analysisMode: "codexReview",
     strongEvidenceCount: articles.length,
     supportingContextCount: supportingArticles.length,
+    perceptionSignalCount: perceptionSignals.length,
+  };
+  const generatedPerception = isRecord(review.marketPerception) ? review.marketPerception : {};
+  review.marketPerception = {
+    ...generatedPerception,
+    signalCount: perceptionSignals.length,
+    sourceCalibration: perceptionSourceCalibration,
+    evidenceBoundary: "Perception signals describe market discussion only; they do not establish facts or independently alter the long-term thesis.",
   };
   return { model, review };
 }

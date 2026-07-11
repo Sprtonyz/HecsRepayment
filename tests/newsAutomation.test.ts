@@ -9,6 +9,7 @@ import {
   selectBestTickerStory,
   strongEvidenceRejectionReason,
 } from "@/lib/news/automation/selection";
+import { toPerceptionSignal } from "@/lib/news/automation/perception";
 import type { DiscoveredNewsCandidate, RetrievedNewsCandidate } from "@/lib/news/automation/types";
 
 describe("automated Deep Context news selection", () => {
@@ -103,6 +104,51 @@ describe("automated Deep Context news selection", () => {
     };
     expect(isSupportingContext(context)).toBe(true);
     expect(selectBestTickerStory([context])).toBeUndefined();
+  });
+
+  it("keeps reputable reporting about an unconfirmed catalyst in the perception lane", () => {
+    const report = {
+      ...retrieved(
+        "Reuters reports Apple is considering a new services partnership",
+        60,
+        "read",
+        "Reuters reports that people familiar with the matter say Apple is considering a new services partnership. Apple may announce terms before its next earnings release. The discussions remain ongoing and Apple has not confirmed the plan. ".repeat(8),
+        "https://www.reuters.com/technology/apple-services-partnership",
+      ),
+      companyFocusScore: 26,
+      sourceTier: "reputable" as const,
+      materiality: "medium" as const,
+      qualityFlags: ["below-strong-evidence-threshold", "commentary-without-business-event"],
+      independentSourceCount: 2,
+    };
+    const signal = toPerceptionSignal(report);
+
+    expect(signal?.perceptionKind).toBe("reported");
+    expect(signal?.perceptionScore).toBeGreaterThanOrEqual(60);
+    expect(signal?.independentSourceCount).toBe(2);
+    expect(signal?.catalystTags).toContain("earnings");
+    expect(selectBestTickerStory([report])).toBeUndefined();
+  });
+
+  it("rejects uncorroborated aggregator speculation from the perception lane", () => {
+    const aggregatorRumour = {
+      ...retrieved("Apple may make a major move", 60, "read", "Apple may make a major move. ".repeat(60)),
+      companyFocusScore: 26,
+      sourceTier: "aggregator" as const,
+      materiality: "medium" as const,
+      qualityFlags: ["below-strong-evidence-threshold", "commentary-without-business-event"],
+    };
+    expect(toPerceptionSignal(aggregatorRumour)).toBeUndefined();
+  });
+
+  it("allows an attributable analyst expectation into perception, but still rejects price targets", () => {
+    const profile = getTickerNewsProfile("AAPL");
+    const expectation = candidate("Analyst expects Apple Services momentum to continue", "The analyst expects Services growth to remain resilient.");
+    const priceTarget = candidate("Analyst raises Apple price target", "A price target update without a business development.");
+    const filtered = rejectUnsuitableCandidates([expectation, priceTarget], profile, "2026-07-10T00:00:00.000Z");
+
+    expect(filtered.accepted).toEqual([expectation]);
+    expect(filtered.rejected[0]?.reason).toBe("headline-noise-or-price-action");
   });
 });
 

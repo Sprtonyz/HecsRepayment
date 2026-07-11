@@ -6,7 +6,9 @@ import {
   getAutomatedMonthlyCoverage,
   getAutomatedMonthlyReportStatus,
   getAutomatedNewsArticlesForMonth,
+  getAutomatedPerceptionSignalsForMonth,
   getAutomatedSupportingNewsForMonth,
+  getPerceptionSourceCalibration,
   saveAutomatedMonthlyReport,
 } from "@/lib/shared-news/automationStore";
 
@@ -26,8 +28,12 @@ export async function GET(request: NextRequest) {
         results.push({ symbol, status: "skipped-published" });
         continue;
       }
-      const articles = await getAutomatedNewsArticlesForMonth(symbol, reviewMonth);
-      const supportingArticles = await getAutomatedSupportingNewsForMonth(symbol, reviewMonth);
+      const [articles, supportingArticles, perceptionSignals, perceptionSourceCalibration] = await Promise.all([
+        getAutomatedNewsArticlesForMonth(symbol, reviewMonth),
+        getAutomatedSupportingNewsForMonth(symbol, reviewMonth),
+        getAutomatedPerceptionSignalsForMonth(symbol, reviewMonth),
+        getPerceptionSourceCalibration(symbol),
+      ]);
       try {
         await saveAutomatedMonthlyReport({
           symbol,
@@ -42,6 +48,8 @@ export async function GET(request: NextRequest) {
           reviewMonth,
           articles,
           supportingArticles,
+          perceptionSignals,
+          perceptionSourceCalibration,
           coverageStatus,
           shortfallDayCount: coverage.daysWithShortfall,
         });
@@ -63,7 +71,13 @@ export async function GET(request: NextRequest) {
           model: generated.model,
           report: generated.review,
         });
-        results.push({ symbol, status: "published", strongEvidenceCount: articles.length, supportingContextCount: supportingArticles.length });
+        results.push({
+          symbol,
+          status: "published",
+          strongEvidenceCount: articles.length,
+          supportingContextCount: supportingArticles.length,
+          perceptionSignalCount: perceptionSignals.length,
+        });
       } catch (error) {
         await saveAutomatedMonthlyReport({
           symbol,

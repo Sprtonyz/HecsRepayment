@@ -13,7 +13,7 @@ export const STRONG_EVIDENCE_THRESHOLD = 70;
 
 const NOISE_PATTERNS = [
   /\b(stock (is|to|price|forecast|prediction|quote)|share price|buy or sell|is .* a buy)\b/i,
-  /\b(analyst (says|rating|upgrades?|downgrades?)|price target)\b/i,
+  /\b(analyst (rating|upgrades?|downgrades?)|price target)\b/i,
   /\b(top \d+|best stocks?|market recap)\b/i,
 ];
 const ROUNDUP_PATTERNS = [
@@ -156,11 +156,24 @@ export function groupNearDuplicates(candidates: RetrievedNewsCandidate[]) {
   let removed = 0;
   for (const [signature, group] of groups) {
     group.sort((left, right) => right.qualityScore - left.qualityScore || right.relevanceScore - left.relevanceScore);
-    const representative = { ...group[0], duplicateGroupId: `dup:${signature}` };
+    const independentSources = new Set(group.map((candidate) => publicationIdentity(candidate)));
+    const representative = {
+      ...group[0],
+      duplicateGroupId: `dup:${signature}`,
+      independentSourceCount: independentSources.size,
+    };
     representatives.push(representative);
     removed += Math.max(0, group.length - 1);
   }
   return { representatives, removed };
+}
+
+function publicationIdentity(candidate: RetrievedNewsCandidate) {
+  try {
+    return new URL(candidate.canonicalUrl).hostname.toLowerCase();
+  } catch {
+    return candidate.source.toLowerCase();
+  }
 }
 
 export function selectBestTickerStory(candidates: RetrievedNewsCandidate[]) {
